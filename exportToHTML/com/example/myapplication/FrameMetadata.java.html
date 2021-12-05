@@ -1,0 +1,85 @@
+<html>
+<head>
+<title>FrameMetadata.java</title>
+<meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+<style type="text/css">
+.s0 { color: #000080; font-weight: bold;}
+.s1 { color: #000000;}
+.s2 { color: #808080; font-style: italic;}
+.s3 { color: #808080; font-weight: bold; font-style: italic;}
+</style>
+</head>
+<body bgcolor="#ffffff">
+<table CELLSPACING=0 CELLPADDING=5 COLS=1 WIDTH="100%" BGCOLOR="#c0c0c0" >
+<tr><td><center>
+<font face="Arial, Helvetica" color="#000000">
+FrameMetadata.java</font>
+</center></td></tr></table>
+<pre><span class="s0">package </span>com.example.myapplication;
+
+<span class="s2">/** Describing a frame info. */</span>
+<span class="s0">public class </span>FrameMetadata {
+
+    <span class="s0">private final int </span>width;
+    <span class="s0">private final int </span>height;
+    <span class="s0">private final int </span>rotation;
+    <span class="s0">private final int </span>cameraFacing;
+
+    <span class="s0">public int </span>getWidth() {
+        <span class="s0">return </span>width;
+    }
+
+    <span class="s0">public int </span>getHeight() {
+        <span class="s0">return </span>height;
+    }
+
+    <span class="s0">public int </span>getRotation() {
+        <span class="s0">return </span>rotation;
+    }
+
+    <span class="s0">public int </span>getCameraFacing() {
+        <span class="s0">return </span>cameraFacing;
+    }
+
+    <span class="s0">private </span>FrameMetadata(<span class="s0">int </span>width, <span class="s0">int </span>height, <span class="s0">int </span>rotation, <span class="s0">int </span>facing) {
+        <span class="s0">this</span>.width = width;
+        <span class="s0">this</span>.height = height;
+        <span class="s0">this</span>.rotation = rotation;
+        cameraFacing = facing;
+    }
+
+    <span class="s2">/** Builder of {</span><span class="s3">@link </span><span class="s2">FrameMetadata}. */</span>
+    <span class="s0">public static class </span>Builder {
+
+        <span class="s0">private int </span>width;
+        <span class="s0">private int </span>height;
+        <span class="s0">private int </span>rotation;
+        <span class="s0">private int </span>cameraFacing;
+
+        <span class="s0">public </span>Builder setWidth(<span class="s0">int </span>width) {
+            <span class="s0">this</span>.width = width;
+            <span class="s0">return this</span>;
+        }
+
+        <span class="s0">public </span>Builder setHeight(<span class="s0">int </span>height) {
+            <span class="s0">this</span>.height = height;
+            <span class="s0">return this</span>;
+        }
+
+        <span class="s0">public </span>Builder setRotation(<span class="s0">int </span>rotation) {
+            <span class="s0">this</span>.rotation = rotation;
+            <span class="s0">return this</span>;
+        }
+
+        <span class="s0">public </span>Builder setCameraFacing(<span class="s0">int </span>facing) {
+            cameraFacing = facing;
+            <span class="s0">return this</span>;
+        }
+
+        <span class="s0">public </span>FrameMetadata build() {
+            <span class="s0">return new </span>FrameMetadata(width, height, rotation, cameraFacing);
+        }
+    }
+}</pre>
+</body>
+</html>

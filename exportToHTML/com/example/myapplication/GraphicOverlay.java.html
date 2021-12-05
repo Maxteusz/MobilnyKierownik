@@ -1,0 +1,187 @@
+<html>
+<head>
+<title>GraphicOverlay.java</title>
+<meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+<style type="text/css">
+.s0 { color: #000080; font-weight: bold;}
+.s1 { color: #000000;}
+.s2 { color: #808080; font-style: italic;}
+.s3 { color: #808080; font-style: italic;}
+.s4 { color: #808080; font-weight: bold; font-style: italic;}
+.s5 { color: #0000ff;}
+</style>
+</head>
+<body bgcolor="#ffffff">
+<table CELLSPACING=0 CELLPADDING=5 COLS=1 WIDTH="100%" BGCOLOR="#c0c0c0" >
+<tr><td><center>
+<font face="Arial, Helvetica" color="#000000">
+GraphicOverlay.java</font>
+</center></td></tr></table>
+<pre><span class="s0">package </span>com.example.myapplication;
+
+<span class="s0">import </span>android.content.Context;
+<span class="s0">import </span>android.graphics.Canvas;
+<span class="s0">import </span>android.util.AttributeSet;
+<span class="s0">import </span>android.view.View;
+
+<span class="s0">import </span>com.google.android.gms.vision.CameraSource;
+
+<span class="s0">import </span>java.util.ArrayList;
+<span class="s0">import </span>java.util.List;
+
+<span class="s2">/**</span>
+ <span class="s2">* A view which renders a series of custom graphics to be overlayed on top of an associated preview</span>
+ <span class="s2">* (i.e., the camera preview). The creator can add graphics objects, update the objects, and remove</span>
+ <span class="s2">* them, triggering the appropriate drawing and invalidation within the view.</span>
+ <span class="s2">*</span>
+ <span class="s2">* </span><span class="s3">&lt;p&gt;</span><span class="s2">Supports scaling and mirroring of the graphics relative the camera's preview properties. The</span>
+ <span class="s2">* idea is that detection items are expressed in terms of a preview size, but need to be scaled up</span>
+ <span class="s2">* to the full view size, and also mirrored in the case of the front-facing camera.</span>
+ <span class="s2">*</span>
+ <span class="s2">* </span><span class="s3">&lt;p&gt;</span><span class="s2">Associated {</span><span class="s4">@link </span><span class="s2">Graphic} items should use the following methods to convert to view</span>
+ <span class="s2">* coordinates for the graphics that are drawn:</span>
+ <span class="s2">*</span>
+ <span class="s2">* </span><span class="s3">&lt;ol&gt;</span>
+ <span class="s2">*   </span><span class="s3">&lt;li&gt;</span><span class="s2">{</span><span class="s4">@link </span><span class="s2">Graphic#scaleX(float)} and {</span><span class="s4">@link </span><span class="s2">Graphic#scaleY(float)} adjust the size of the</span>
+ <span class="s2">*       supplied value from the preview scale to the view scale.</span>
+ <span class="s2">*   </span><span class="s3">&lt;li&gt;</span><span class="s2">{</span><span class="s4">@link </span><span class="s2">Graphic#translateX(float)} and {</span><span class="s4">@link </span><span class="s2">Graphic#translateY(float)} adjust the</span>
+ <span class="s2">*       coordinate from the preview's coordinate system to the view coordinate system.</span>
+ <span class="s2">* </span><span class="s3">&lt;/ol&gt;</span>
+ <span class="s2">*/</span>
+<span class="s0">public class </span>GraphicOverlay <span class="s0">extends </span>View {
+    <span class="s0">private final </span>Object lock = <span class="s0">new </span>Object();
+    <span class="s0">private int </span>previewWidth;
+    <span class="s0">private float </span>widthScaleFactor = <span class="s5">1.0f</span>;
+    <span class="s0">private int </span>previewHeight;
+    <span class="s0">private float </span>heightScaleFactor = <span class="s5">1.0f</span>;
+    <span class="s0">private int </span>facing = CameraSource.CAMERA_FACING_BACK;
+    <span class="s0">private final </span>List&lt;Graphic&gt; graphics = <span class="s0">new </span>ArrayList&lt;&gt;();
+
+    <span class="s2">/**</span>
+     <span class="s2">* Base class for a custom graphics object to be rendered within the graphic overlay. Subclass</span>
+     <span class="s2">* this and implement the {</span><span class="s4">@link </span><span class="s2">Graphic#draw(Canvas)} method to define the graphics element. Add</span>
+     <span class="s2">* instances to the overlay using {</span><span class="s4">@link </span><span class="s2">GraphicOverlay#add(Graphic)}.</span>
+     <span class="s2">*/</span>
+    <span class="s0">public abstract static class </span>Graphic {
+        <span class="s0">private </span>GraphicOverlay overlay;
+
+        <span class="s0">public </span>Graphic(GraphicOverlay overlay) {
+            <span class="s0">this</span>.overlay = overlay;
+        }
+
+        <span class="s2">/**</span>
+         <span class="s2">* Draw the graphic on the supplied canvas. Drawing should use the following methods to convert</span>
+         <span class="s2">* to view coordinates for the graphics that are drawn:</span>
+         <span class="s2">*</span>
+         <span class="s2">* </span><span class="s3">&lt;ol&gt;</span>
+         <span class="s2">*   </span><span class="s3">&lt;li&gt;</span><span class="s2">{</span><span class="s4">@link </span><span class="s2">Graphic#scaleX(float)} and {</span><span class="s4">@link </span><span class="s2">Graphic#scaleY(float)} adjust the size of the</span>
+         <span class="s2">*       supplied value from the preview scale to the view scale.</span>
+         <span class="s2">*   </span><span class="s3">&lt;li&gt;</span><span class="s2">{</span><span class="s4">@link </span><span class="s2">Graphic#translateX(float)} and {</span><span class="s4">@link </span><span class="s2">Graphic#translateY(float)} adjust the</span>
+         <span class="s2">*       coordinate from the preview's coordinate system to the view coordinate system.</span>
+         <span class="s2">* </span><span class="s3">&lt;/ol&gt;</span>
+         <span class="s2">*</span>
+         <span class="s2">* </span><span class="s4">@param </span><span class="s2">canvas drawing canvas</span>
+         <span class="s2">*/</span>
+        <span class="s0">public abstract void </span>draw(Canvas canvas);
+
+        <span class="s2">/**</span>
+         <span class="s2">* Adjusts a horizontal value of the supplied value from the preview scale to the view scale.</span>
+         <span class="s2">*/</span>
+        <span class="s0">public float </span>scaleX(<span class="s0">float </span>horizontal) {
+            <span class="s0">return </span>horizontal * overlay.widthScaleFactor;
+        }
+
+        <span class="s2">/** Adjusts a vertical value of the supplied value from the preview scale to the view scale. */</span>
+        <span class="s0">public float </span>scaleY(<span class="s0">float </span>vertical) {
+            <span class="s0">return </span>vertical * overlay.heightScaleFactor;
+        }
+
+        <span class="s2">/** Returns the application context of the app. */</span>
+        <span class="s0">public </span>Context getApplicationContext() {
+            <span class="s0">return </span>overlay.getContext().getApplicationContext();
+        }
+
+        <span class="s2">/**</span>
+         <span class="s2">* Adjusts the x coordinate from the preview's coordinate system to the view coordinate system.</span>
+         <span class="s2">*/</span>
+        <span class="s0">public float </span>translateX(<span class="s0">float </span>x) {
+            <span class="s0">if </span>(overlay.facing == CameraSource.CAMERA_FACING_FRONT) {
+                <span class="s0">return </span>overlay.getWidth() - scaleX(x);
+            } <span class="s0">else </span>{
+                <span class="s0">return </span>scaleX(x);
+            }
+        }
+
+        <span class="s2">/**</span>
+         <span class="s2">* Adjusts the y coordinate from the preview's coordinate system to the view coordinate system.</span>
+         <span class="s2">*/</span>
+        <span class="s0">public float </span>translateY(<span class="s0">float </span>y) {
+            <span class="s0">return </span>scaleY(y);
+        }
+
+        <span class="s0">public void </span>postInvalidate() {
+            overlay.postInvalidate();
+        }
+    }
+
+    <span class="s0">public </span>GraphicOverlay(Context context, AttributeSet attrs) {
+        <span class="s0">super</span>(context, attrs);
+    }
+
+    <span class="s2">/** Removes all graphics from the overlay. */</span>
+    <span class="s0">public void </span>clear() {
+        <span class="s0">synchronized </span>(lock) {
+            graphics.clear();
+        }
+        postInvalidate();
+    }
+
+    <span class="s2">/** Adds a graphic to the overlay. */</span>
+    <span class="s0">public void </span>add(Graphic graphic) {
+        <span class="s0">synchronized </span>(lock) {
+            graphics.add(graphic);
+        }
+    }
+
+    <span class="s2">/** Removes a graphic from the overlay. */</span>
+    <span class="s0">public void </span>remove(Graphic graphic) {
+        <span class="s0">synchronized </span>(lock) {
+            graphics.remove(graphic);
+        }
+        postInvalidate();
+    }
+
+    <span class="s2">/**</span>
+     <span class="s2">* Sets the camera attributes for size and facing direction, which informs how to transform image</span>
+     <span class="s2">* coordinates later.</span>
+     <span class="s2">*/</span>
+    <span class="s0">public void </span>setCameraInfo(<span class="s0">int </span>previewWidth, <span class="s0">int </span>previewHeight, <span class="s0">int </span>facing) {
+        <span class="s0">synchronized </span>(lock) {
+            <span class="s0">this</span>.previewWidth = previewWidth;
+            <span class="s0">this</span>.previewHeight = previewHeight;
+            <span class="s0">this</span>.facing = facing;
+        }
+        postInvalidate();
+    }
+
+    <span class="s2">/** Draws the overlay with its associated graphic objects. */</span>
+    @Override
+    <span class="s0">protected void </span>onDraw(Canvas canvas) {
+        <span class="s0">super</span>.onDraw(canvas);
+
+        <span class="s0">synchronized </span>(lock) {
+            <span class="s0">if </span>((previewWidth != <span class="s5">0</span>) &amp;&amp; (previewHeight != <span class="s5">0</span>)) {
+                widthScaleFactor = (<span class="s0">float</span>) canvas.getWidth() / (<span class="s0">float</span>) previewWidth;
+                heightScaleFactor = (<span class="s0">float</span>) canvas.getHeight() / (<span class="s0">float</span>) previewHeight;
+            }
+
+            <span class="s0">for </span>(Graphic graphic : graphics) {
+                graphic.draw(canvas);
+            }
+        }
+    }
+}
+
+</pre>
+</body>
+</html>

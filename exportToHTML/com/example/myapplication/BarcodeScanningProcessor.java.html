@@ -1,0 +1,100 @@
+<html>
+<head>
+<title>BarcodeScanningProcessor.java</title>
+<meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+<style type="text/css">
+.s0 { color: #000080; font-weight: bold;}
+.s1 { color: #000000;}
+.s2 { color: #008000; font-weight: bold;}
+.s3 { color: #808080; font-style: italic;}
+.s4 { color: #0000ff;}
+</style>
+</head>
+<body bgcolor="#ffffff">
+<table CELLSPACING=0 CELLPADDING=5 COLS=1 WIDTH="100%" BGCOLOR="#c0c0c0" >
+<tr><td><center>
+<font face="Arial, Helvetica" color="#000000">
+BarcodeScanningProcessor.java</font>
+</center></td></tr></table>
+<pre><span class="s0">package </span>com.example.myapplication;
+
+<span class="s0">import </span>android.graphics.Bitmap;
+
+<span class="s0">import </span>android.util.Log;
+
+<span class="s0">import </span>androidx.annotation.NonNull;
+<span class="s0">import </span>androidx.annotation.Nullable;
+
+<span class="s0">import </span>com.google.android.gms.tasks.Task;
+<span class="s0">import </span>com.google.firebase.ml.vision.FirebaseVision;
+<span class="s0">import </span>com.google.firebase.ml.vision.barcode.FirebaseVisionBarcode;
+<span class="s0">import </span>com.google.firebase.ml.vision.barcode.FirebaseVisionBarcodeDetector;
+<span class="s0">import </span>com.google.firebase.ml.vision.common.FirebaseVisionImage;
+
+<span class="s0">import </span>java.io.IOException;
+<span class="s0">import </span>java.util.ArrayList;
+<span class="s0">import </span>java.util.List;
+
+
+
+<span class="s0">public class </span>BarcodeScanningProcessor <span class="s0">extends </span>VisionProcessorBase&lt;List&lt;FirebaseVisionBarcode&gt;&gt; {
+
+    <span class="s0">private static final </span>String TAG = <span class="s2">&quot;BarcodeScanProc&quot;</span>;
+
+    <span class="s0">private final </span>FirebaseVisionBarcodeDetector detector;
+    <span class="s0">private </span>ArrayList&lt;String&gt; listOfAdresses;
+
+    <span class="s0">public </span>BarcodeScanningProcessor(ArrayList&lt;String&gt; listOfAdresses) {
+        <span class="s3">// Note that if you know which format of barcode your app is dealing with, detection will be</span>
+        <span class="s3">// faster to specify the supported barcode formats one by one, e.g.</span>
+        <span class="s3">// new FirebaseVisionBarcodeDetectorOptions.Builder()</span>
+        <span class="s3">//     .setBarcodeFormats(FirebaseVisionBarcode.FORMAT_QR_CODE)</span>
+        <span class="s3">//     .build();</span>
+        detector = FirebaseVision.getInstance().getVisionBarcodeDetector();
+        <span class="s0">this</span>.listOfAdresses = listOfAdresses;
+    }
+
+    @Override
+    <span class="s0">public void </span>stop() {
+        <span class="s0">try </span>{
+            detector.close();
+        } <span class="s0">catch </span>(IOException e) {
+            Log.e(TAG, <span class="s2">&quot;Exception thrown while trying to close Barcode Detector: &quot; </span>+ e);
+        }
+    }
+
+    @Override
+    <span class="s0">protected </span>Task&lt;List&lt;FirebaseVisionBarcode&gt;&gt; detectInImage(FirebaseVisionImage image) {
+        <span class="s0">return </span>detector.detectInImage(image);
+    }
+
+    @Override
+    <span class="s0">protected void </span>onSuccess(
+            @Nullable Bitmap originalCameraImage,
+            @NonNull List&lt;FirebaseVisionBarcode&gt; barcodes,
+            @NonNull FrameMetadata frameMetadata,
+            @NonNull GraphicOverlay graphicOverlay) {
+        graphicOverlay.clear();
+        <span class="s0">if </span>(originalCameraImage != <span class="s0">null</span>) {
+            CameraImageGraphic imageGraphic = <span class="s0">new </span>CameraImageGraphic(graphicOverlay, originalCameraImage);
+            graphicOverlay.add(imageGraphic);
+        }
+        <span class="s0">for </span>(<span class="s0">int </span>i = <span class="s4">0</span>; i &lt; barcodes.size(); ++i) {
+            FirebaseVisionBarcode barcode = barcodes.get(i);
+            BarcodeGraphic barcodeGraphic = <span class="s0">new </span>BarcodeGraphic(graphicOverlay, barcode,<span class="s4">30</span>);
+            graphicOverlay.add(barcodeGraphic);
+        }
+        graphicOverlay.postInvalidate();
+    }
+
+    @Override
+    <span class="s0">protected void </span>onFailure(@NonNull Exception e) {
+        Log.e(TAG, <span class="s2">&quot;Barcode detection failed &quot; </span>+ e);
+    }
+
+
+
+}
+</pre>
+</body>
+</html>

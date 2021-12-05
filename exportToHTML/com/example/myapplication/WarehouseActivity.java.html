@@ -1,0 +1,167 @@
+<html>
+<head>
+<title>WarehouseActivity.java</title>
+<meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+<style type="text/css">
+.s0 { color: #000080; font-weight: bold;}
+.s1 { color: #000000;}
+.s2 { color: #008000; font-weight: bold;}
+.s3 { color: #0000ff;}
+</style>
+</head>
+<body bgcolor="#ffffff">
+<table CELLSPACING=0 CELLPADDING=5 COLS=1 WIDTH="100%" BGCOLOR="#c0c0c0" >
+<tr><td><center>
+<font face="Arial, Helvetica" color="#000000">
+WarehouseActivity.java</font>
+</center></td></tr></table>
+<pre><span class="s0">package </span>com.example.myapplication;
+
+<span class="s0">import </span>androidx.annotation.RequiresApi;
+<span class="s0">import </span>androidx.appcompat.app.AppCompatActivity;
+
+<span class="s0">import </span>android.graphics.Color;
+<span class="s0">import </span>android.os.AsyncTask;
+<span class="s0">import </span>android.os.Build;
+<span class="s0">import </span>android.os.Bundle;
+<span class="s0">import </span>android.os.Handler;
+<span class="s0">import </span>android.util.Log;
+<span class="s0">import </span>android.widget.ListView;
+
+<span class="s0">import </span>java.sql.Connection;
+<span class="s0">import </span>java.sql.ResultSet;
+<span class="s0">import </span>java.sql.Statement;
+<span class="s0">import </span>java.util.ArrayList;
+<span class="s0">import </span>java.util.Comparator;
+
+<span class="s0">public class </span>WarehouseActivity <span class="s0">extends </span>AppCompatActivity {
+
+    ListView listView;
+    WarehouseCargoListAdapter adapter;
+    ArrayList&lt;Cargo&gt; cargoList;
+    SqlConnection connection;
+    <span class="s0">private </span>AsyncTask&lt;Void, Void, Void&gt; taskInbacground;
+
+    @Override
+    <span class="s0">protected void </span>onCreate(Bundle savedInstanceState) {
+        <span class="s0">super</span>.onCreate(savedInstanceState);
+        setContentView(R.layout.activity_warehouse);
+        getWindow().setStatusBarColor(Color.parseColor(<span class="s2">&quot;#03a9f4&quot;</span>));
+        listView = findViewById(R.id.cargoListView);
+        cargoList = <span class="s0">new </span>ArrayList&lt;&gt;();
+        taskInbacground = <span class="s0">new </span>getData();
+
+
+        adapter = <span class="s0">new </span>WarehouseCargoListAdapter(getApplicationContext(),cargoList);
+        listView.setAdapter(adapter);
+
+    }
+
+    @Override
+    <span class="s0">protected void </span>onPostResume() {
+        <span class="s0">super</span>.onPostResume();
+        taskInbacground.execute();
+
+
+    }
+
+    @Override
+    <span class="s0">protected void </span>onPause() {
+
+
+        Log.i(<span class="s2">&quot;OnStop&quot;</span>, <span class="s2">&quot;dsds&quot;</span>);
+        taskInbacground.cancel(<span class="s0">true</span>);
+        <span class="s0">super</span>.onPause();
+
+    }
+
+
+    <span class="s0">public void </span>getCargoList()
+    {
+        connection = <span class="s0">new </span>SqlConnection();
+        Connection con = connection.CONN();
+
+        <span class="s0">int </span>x = <span class="s3">0</span>;
+
+        <span class="s0">if </span>(con != <span class="s0">null</span>) {
+            Statement statement = <span class="s0">null</span>;
+            ResultSet rs = <span class="s0">null</span>;
+
+            <span class="s0">try </span>{
+                statement = con.createStatement();
+
+                rs = <span class="s0">null</span>;
+
+
+                    rs = statement.executeQuery(<span class="s2">&quot;SELECT Twr_Kod, TwI_Ilosc, Twr_JM, TwI_Zamowienia, TwI_Rezerwacje , Twr_IloscMin  from Cdn.TwrIlosci A</span><span class="s0">\n</span><span class="s2">&quot; </span>+
+                            <span class="s2">&quot;        JOIN (SELECT X.twi_data AS DATA, X.twi_twiid AS Twiid</span><span class="s0">\n</span><span class="s2">&quot; </span>+
+                            <span class="s2">&quot;        FROM cdn.twrilosci X where X.twi_twiid = CDN.TwrIlosciID ( X.twi_twrid, 0, getdate()))</span><span class="s0">\n</span><span class="s2">&quot; </span>+
+                            <span class="s2">&quot;        B ON A.TwI_TwIId = B.Twiid</span><span class="s0">\n</span><span class="s2">&quot; </span>+
+                            <span class="s2">&quot;        JOIN cdn.towary on a.twi_twrid = Twr_TwrId where TwI_Ilosc &lt; Twr_IloscMin&quot;</span>);
+                    <span class="s0">while </span>(rs.next()) {
+
+                        String name = rs.getString(<span class="s3">1</span>);
+                        <span class="s0">int </span>quantity = rs.getInt(<span class="s3">2</span>);
+                        String unit = rs.getString(<span class="s3">3</span>);
+                        <span class="s0">int </span>minimumQuantity = <span class="s3">200</span>;
+                        <span class="s0">int </span>orderQuantity = rs.getInt(<span class="s3">4</span>);
+                        <span class="s0">int </span>reservationQuantity = rs.getInt(<span class="s3">5</span>);
+                        <span class="s0">if</span>(quantity != <span class="s3">0</span>)
+                        cargoList.add(<span class="s0">new </span>Cargo(name, quantity, unit, minimumQuantity,orderQuantity, reservationQuantity));
+                        x++;
+
+
+                        Log.i(<span class="s2">&quot;ffd&quot;</span>,x+<span class="s2">&quot;&quot;</span>);
+                        <span class="s0">if</span>(taskInbacground.isCancelled())
+                        rs.cancelRowUpdates();
+                    }
+                    con.close();
+                } <span class="s0">catch </span>(Exception e) {
+                    e.printStackTrace();
+                }
+
+            }
+
+        }
+
+    <span class="s0">public class </span>getData <span class="s0">extends </span>AsyncTask&lt;Void, Void, Void&gt; {
+
+
+        @Override
+        <span class="s0">protected void </span>onPostExecute(Void aVoid) {
+
+            <span class="s0">super</span>.onPostExecute(aVoid);
+            adapter.notifyDataSetChanged();
+
+
+        }
+
+        @Override
+        <span class="s0">protected void </span>onProgressUpdate(Void... values) {
+
+            Log.i(<span class="s2">&quot;cccc&quot;</span>,<span class="s2">&quot;dfdfd&quot;</span>);
+
+            <span class="s0">super</span>.onProgressUpdate(values);
+        }
+
+        @Override
+        <span class="s0">protected </span>Void doInBackground(Void... voids) {
+            getCargoList();
+            <span class="s0">return null</span>;
+        }
+
+        @Override
+        <span class="s0">protected void </span>onPreExecute() {
+            <span class="s0">super</span>.onPreExecute();
+
+
+        }
+    }
+
+
+
+
+
+}</pre>
+</body>
+</html>

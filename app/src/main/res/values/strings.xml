@@ -1,0 +1,15 @@
+<resources>
+    <string name="app_name">My Application</string>
+
+    <string-array name="filter_task">
+        <item>Nr Zlecenia</item>
+        <item>Pracownik</item>
+        <item>Zasób</item>
+    </string-array>
+    <string-array name="filter_order">
+        <item>Nr Zlecenia</item>
+        <item>Wyrób</item>
+
+    </string-array>
+
+</resources>

@@ -1,0 +1,157 @@
+<html>
+<head>
+<title>VisionProcessorBase.java</title>
+<meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+<style type="text/css">
+.s0 { color: #000080; font-weight: bold;}
+.s1 { color: #000000;}
+.s2 { color: #808080; font-style: italic;}
+.s3 { color: #808080; font-weight: bold; font-style: italic;}
+.s4 { color: #008000; font-weight: bold;}
+</style>
+</head>
+<body bgcolor="#ffffff">
+<table CELLSPACING=0 CELLPADDING=5 COLS=1 WIDTH="100%" BGCOLOR="#c0c0c0" >
+<tr><td><center>
+<font face="Arial, Helvetica" color="#000000">
+VisionProcessorBase.java</font>
+</center></td></tr></table>
+<pre><span class="s0">package </span>com.example.myapplication;
+
+<span class="s0">import </span>android.graphics.Bitmap;
+
+
+<span class="s0">import </span>androidx.annotation.GuardedBy;
+<span class="s0">import </span>androidx.annotation.NonNull;
+<span class="s0">import </span>androidx.annotation.Nullable;
+
+<span class="s0">import </span>com.google.android.gms.tasks.OnFailureListener;
+<span class="s0">import </span>com.google.android.gms.tasks.OnSuccessListener;
+<span class="s0">import </span>com.google.android.gms.tasks.Task;
+<span class="s0">import </span>com.google.firebase.ml.vision.common.FirebaseVisionImage;
+<span class="s0">import </span>com.google.firebase.ml.vision.common.FirebaseVisionImageMetadata;
+
+
+<span class="s0">import </span>java.nio.ByteBuffer;
+
+<span class="s2">/**</span>
+ <span class="s2">* Abstract base class for ML Kit frame processors. Subclasses need to implement {</span><span class="s3">@link</span>
+ <span class="s2">* #onSuccess(Bitmap, Object, FrameMetadata, GraphicOverlay)} to define what they want to with</span>
+ <span class="s2">* the detection results and {</span><span class="s3">@link </span><span class="s2">#detectInImage(FirebaseVisionImage)} to specify the detector</span>
+ <span class="s2">* object.</span>
+ <span class="s2">*</span>
+ <span class="s2">* </span><span class="s3">@param </span>&lt;<span class="s2">T</span>&gt; <span class="s2">The type of the detected feature.</span>
+ <span class="s2">*/</span>
+<span class="s0">public abstract class </span>VisionProcessorBase&lt;T&gt; <span class="s0">implements </span>VisionImageProcessor {
+
+    <span class="s2">// To keep the latest images and its metadata.</span>
+    @GuardedBy(<span class="s4">&quot;this&quot;</span>)
+    <span class="s0">private </span>ByteBuffer latestImage;
+
+    @GuardedBy(<span class="s4">&quot;this&quot;</span>)
+    <span class="s0">private </span>FrameMetadata latestImageMetaData;
+
+    <span class="s2">// To keep the images and metadata in process.</span>
+    @GuardedBy(<span class="s4">&quot;this&quot;</span>)
+    <span class="s0">private </span>ByteBuffer processingImage;
+
+    @GuardedBy(<span class="s4">&quot;this&quot;</span>)
+
+    <span class="s0">private </span>FrameMetadata processingMetaData;
+
+    <span class="s0">public </span>VisionProcessorBase() {
+    }
+
+    @Override
+    <span class="s0">public synchronized void </span>process(
+            ByteBuffer data, <span class="s0">final </span>FrameMetadata frameMetadata, <span class="s0">final </span>GraphicOverlay
+            graphicOverlay) {
+        latestImage = data;
+        latestImageMetaData = frameMetadata;
+        <span class="s0">if </span>(processingImage == <span class="s0">null </span>&amp;&amp; processingMetaData == <span class="s0">null</span>) {
+            processLatestImage(graphicOverlay);
+        }
+    }
+
+    <span class="s2">// Bitmap version</span>
+    @Override
+    <span class="s0">public void </span>process(Bitmap bitmap, <span class="s0">final </span>GraphicOverlay
+            graphicOverlay) {
+        detectInVisionImage(<span class="s0">null </span><span class="s2">/* bitmap */</span>, FirebaseVisionImage.fromBitmap(bitmap), <span class="s0">null</span>,
+                graphicOverlay);
+    }
+
+    <span class="s0">private synchronized void </span>processLatestImage(<span class="s0">final </span>GraphicOverlay graphicOverlay) {
+        processingImage = latestImage;
+        processingMetaData = latestImageMetaData;
+        latestImage = <span class="s0">null</span>;
+        latestImageMetaData = <span class="s0">null</span>;
+        <span class="s0">if </span>(processingImage != <span class="s0">null </span>&amp;&amp; processingMetaData != <span class="s0">null</span>) {
+            processImage(processingImage, processingMetaData, graphicOverlay);
+        }
+    }
+
+    <span class="s0">private void </span>processImage(
+            ByteBuffer data, <span class="s0">final </span>FrameMetadata frameMetadata,
+            <span class="s0">final </span>GraphicOverlay graphicOverlay) {
+        FirebaseVisionImageMetadata metadata =
+                <span class="s0">new </span>FirebaseVisionImageMetadata.Builder()
+                        .setFormat(FirebaseVisionImageMetadata.IMAGE_FORMAT_NV21)
+                        .setWidth(frameMetadata.getWidth())
+                        .setHeight(frameMetadata.getHeight())
+                        .setRotation(frameMetadata.getRotation())
+                        .build();
+
+        Bitmap bitmap = BitmapUtils.getBitmap(data, frameMetadata);
+        detectInVisionImage(
+                bitmap, FirebaseVisionImage.fromByteBuffer(data, metadata), frameMetadata,
+                graphicOverlay);
+    }
+
+    <span class="s0">private void </span>detectInVisionImage(
+            <span class="s0">final </span>Bitmap originalCameraImage,
+            FirebaseVisionImage image,
+            <span class="s0">final </span>FrameMetadata metadata,
+            <span class="s0">final </span>GraphicOverlay graphicOverlay) {
+        detectInImage(image)
+                .addOnSuccessListener(
+                        <span class="s0">new </span>OnSuccessListener&lt;T&gt;() {
+                            @Override
+                            <span class="s0">public void </span>onSuccess(T results) {
+                               VisionProcessorBase.<span class="s0">this</span>.onSuccess(originalCameraImage, results,
+                                        metadata,
+                                        graphicOverlay);
+                                processLatestImage(graphicOverlay);
+                            }
+                        })
+                .addOnFailureListener(
+                        <span class="s0">new </span>OnFailureListener() {
+                            @Override
+                            <span class="s0">public void </span>onFailure(@NonNull Exception e) {
+                                VisionProcessorBase.<span class="s0">this</span>.onFailure(e);
+                            }
+                        });
+    }
+
+    @Override
+    <span class="s0">public void </span>stop() {
+    }
+
+    <span class="s0">protected abstract </span>Task&lt;T&gt; detectInImage(FirebaseVisionImage image);
+
+    <span class="s2">/**</span>
+     <span class="s2">* Callback that executes with a successful detection result.</span>
+     <span class="s2">*</span>
+     <span class="s2">* </span><span class="s3">@param </span><span class="s2">originalCameraImage hold the original image from camera, used to draw the background</span>
+     <span class="s2">*                            image.</span>
+     <span class="s2">*/</span>
+    <span class="s0">protected abstract void </span>onSuccess(
+            @Nullable Bitmap originalCameraImage,
+            @NonNull T results,
+            @NonNull FrameMetadata frameMetadata,
+            @NonNull GraphicOverlay graphicOverlay);
+
+    <span class="s0">protected abstract void </span>onFailure(@NonNull Exception e);
+}</pre>
+</body>
+</html>

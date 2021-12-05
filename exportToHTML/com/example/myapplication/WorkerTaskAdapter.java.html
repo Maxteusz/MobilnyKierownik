@@ -1,0 +1,147 @@
+<html>
+<head>
+<title>WorkerTaskAdapter.java</title>
+<meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+<style type="text/css">
+.s0 { color: #000080; font-weight: bold;}
+.s1 { color: #000000;}
+.s2 { color: #008000; font-weight: bold;}
+.s3 { color: #0000ff;}
+</style>
+</head>
+<body bgcolor="#ffffff">
+<table CELLSPACING=0 CELLPADDING=5 COLS=1 WIDTH="100%" BGCOLOR="#c0c0c0" >
+<tr><td><center>
+<font face="Arial, Helvetica" color="#000000">
+WorkerTaskAdapter.java</font>
+</center></td></tr></table>
+<pre><span class="s0">package </span>com.example.myapplication;
+
+<span class="s0">import </span>android.Manifest;
+<span class="s0">import </span>android.content.Context;
+<span class="s0">import </span>android.content.Intent;
+<span class="s0">import </span>android.content.pm.PackageManager;
+<span class="s0">import </span>android.net.Uri;
+<span class="s0">import </span>android.view.LayoutInflater;
+<span class="s0">import </span>android.view.View;
+<span class="s0">import </span>android.view.ViewGroup;
+<span class="s0">import </span>android.widget.TextView;
+
+<span class="s0">import </span>androidx.annotation.NonNull;
+<span class="s0">import </span>androidx.cardview.widget.CardView;
+<span class="s0">import </span>androidx.core.app.ActivityCompat;
+<span class="s0">import </span>androidx.core.content.ContextCompat;
+<span class="s0">import </span>androidx.recyclerview.widget.RecyclerView;
+
+<span class="s0">import </span>java.sql.Connection;
+<span class="s0">import </span>java.sql.ResultSet;
+<span class="s0">import </span>java.sql.Statement;
+<span class="s0">import </span>java.util.ArrayList;
+
+<span class="s0">import static </span>android.Manifest.permission.CALL_PHONE;
+
+<span class="s0">public class </span>WorkerTaskAdapter <span class="s0">extends </span>RecyclerView.Adapter&lt;WorkerTaskAdapter.ViewHolder&gt; {
+
+    ArrayList&lt;Task&gt; TasksArray;
+    Context context;
+
+    <span class="s0">public </span>WorkerTaskAdapter(Context context, ArrayList&lt;Task&gt; TasksArray) {
+
+        <span class="s0">this</span>.context = context;
+        <span class="s0">this</span>.TasksArray = TasksArray;
+
+    }
+
+    @NonNull
+    @Override
+    <span class="s0">public </span>ViewHolder onCreateViewHolder(@NonNull ViewGroup parent, <span class="s0">int </span>viewType) {
+        View view = LayoutInflater.from(context).inflate(R.layout.task_card, parent, <span class="s0">false</span>);
+        <span class="s0">return new </span>ViewHolder(view);
+
+
+    }
+
+    @Override
+    <span class="s0">public void </span>onBindViewHolder(@NonNull ViewHolder holder, <span class="s0">int </span>position) {
+        holder.nameText.setText(TasksArray.get(position).worker);
+        holder.resourceText.setText(TasksArray.get(position).resource);
+        holder.numberText.setText(TasksArray.get(position).number);
+        holder.startDateText.setText((TasksArray.get(position).startTime.toString()));
+        holder.taskCard.setOnClickListener(<span class="s0">new </span>View.OnClickListener() {
+            @Override
+            <span class="s0">public void </span>onClick(View v) {
+                Intent intent = <span class="s0">new </span>Intent(context, DocumentActivity.<span class="s0">class</span>);
+                intent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                intent.putExtra(<span class="s2">&quot;Numer Zlecenia&quot;</span>, holder.numberText.getText().toString());
+                context.startActivity(intent);
+            }
+        });
+        holder.personCard.setOnClickListener(<span class="s0">new </span>View.OnClickListener() {
+            @Override
+            <span class="s0">public void </span>onClick(View v) {
+                String numberPhone = <span class="s2">&quot;&quot;</span>;
+                <span class="s0">if </span>(TasksArray.size() &gt; <span class="s3">0</span>) {
+                    numberPhone = getPhoneNumber(TasksArray.get(position).workerId);
+                    Intent intent = <span class="s0">new </span>Intent(Intent.ACTION_DIAL, Uri.parse(<span class="s2">&quot;tel:&quot; </span>+ numberPhone));
+                    intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                    intent.addFlags(Intent.FLAG_ACTIVITY_EXCLUDE_FROM_RECENTS);
+                    context.startActivity(intent);
+                }
+
+
+            }
+        });
+
+
+    }
+
+    @Override
+    <span class="s0">public int </span>getItemCount() {
+        <span class="s0">return </span>TasksArray.size();
+    }
+
+
+    <span class="s0">public class </span>ViewHolder <span class="s0">extends </span>RecyclerView.ViewHolder {
+        TextView nameText, resourceText, numberText, startDateText;
+        CardView taskCard, personCard;
+
+        <span class="s0">public </span>ViewHolder(@NonNull View itemView) {
+            <span class="s0">super</span>(itemView);
+            nameText = itemView.findViewById(R.id.name_text);
+            resourceText = itemView.findViewById(R.id.resource_text);
+            numberText = itemView.findViewById(R.id.number_text);
+            startDateText = itemView.findViewById(R.id.startDate_text);
+            taskCard = itemView.findViewById(R.id.TaskWorkerCard);
+            personCard = itemView.findViewById(R.id.materialCardView4);
+
+        }
+    }
+
+    <span class="s0">public </span>String getPhoneNumber(<span class="s0">int </span>idWorker) {
+        SqlConnection connection = <span class="s0">new </span>SqlConnection();
+        Connection con = connection.CONN();
+        String phoneNumber = <span class="s2">&quot;&quot;</span>;
+        <span class="s0">if </span>(con != <span class="s0">null</span>) {
+            Statement statement = <span class="s0">null</span>;
+            <span class="s0">try </span>{
+                statement = con.createStatement();
+            } <span class="s0">catch </span>(Exception e) {
+                e.printStackTrace();
+            }
+            ResultSet rs = <span class="s0">null</span>;
+            <span class="s0">try </span>{
+                rs = statement.executeQuery(<span class="s2">&quot;select PRE_HDKTelefon1 from cdn.Pracetaty where Pre_PraId = &quot;</span>+ idWorker );
+                <span class="s0">if </span>(rs.next()) {
+                   phoneNumber = rs.getString(<span class="s3">1</span>);
+                }
+                con.close();
+            } <span class="s0">catch </span>(Exception e) {
+                e.printStackTrace();
+            }
+        }
+        <span class="s0">return </span>phoneNumber;
+    }
+}
+</pre>
+</body>
+</html>

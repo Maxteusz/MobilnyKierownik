@@ -1,0 +1,91 @@
+<html>
+<head>
+<title>BarcodeGraphic.java</title>
+<meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+<style type="text/css">
+.s0 { color: #000080; font-weight: bold;}
+.s1 { color: #000000;}
+.s2 { color: #808080; font-style: italic;}
+.s3 { color: #0000ff;}
+.s4 { color: #008000; font-weight: bold;}
+</style>
+</head>
+<body bgcolor="#ffffff">
+<table CELLSPACING=0 CELLPADDING=5 COLS=1 WIDTH="100%" BGCOLOR="#c0c0c0" >
+<tr><td><center>
+<font face="Arial, Helvetica" color="#000000">
+BarcodeGraphic.java</font>
+</center></td></tr></table>
+<pre><span class="s0">package </span>com.example.myapplication;
+
+<span class="s0">import </span>android.graphics.Canvas;
+<span class="s0">import </span>android.graphics.Color;
+<span class="s0">import </span>android.graphics.LinearGradient;
+<span class="s0">import </span>android.graphics.Paint;
+<span class="s0">import </span>android.graphics.RectF;
+<span class="s0">import </span>android.graphics.Shader;
+
+<span class="s0">import </span>com.google.firebase.ml.vision.barcode.FirebaseVisionBarcode;
+
+
+<span class="s2">/** Graphic instance for rendering Barcode position and content information in an overlay view. */</span>
+<span class="s0">public class </span>BarcodeGraphic <span class="s0">extends </span>GraphicOverlay.Graphic {
+
+    <span class="s0">private static final int </span>TEXT_COLOR = Color.RED;
+    <span class="s0">private static final float </span>TEXT_SIZE = <span class="s3">54.0f</span>;
+    <span class="s0">private static final float </span>STROKE_WIDTH = <span class="s3">4.0f</span>;
+
+    <span class="s0">private final </span>Paint rectPaint;
+    <span class="s0">private final </span>Paint barcodePaint;
+    <span class="s0">private final </span>FirebaseVisionBarcode barcode;
+    <span class="s0">int </span>percentageOfOccupancy;
+
+    BarcodeGraphic(GraphicOverlay overlay, FirebaseVisionBarcode barcode, <span class="s0">int </span>percentageOfOccupancy) {
+        <span class="s0">super</span>(overlay);
+
+        <span class="s0">this</span>.barcode = barcode;
+        <span class="s0">this</span>.percentageOfOccupancy = percentageOfOccupancy;
+
+        rectPaint = <span class="s0">new </span>Paint();
+
+        rectPaint.setStyle(Paint.Style.FILL_AND_STROKE);
+        rectPaint.setStrokeWidth(STROKE_WIDTH);
+
+        barcodePaint = <span class="s0">new </span>Paint();
+        barcodePaint.setColor(TEXT_COLOR);
+        barcodePaint.setTextSize(TEXT_SIZE);
+    }
+
+    <span class="s2">/**</span>
+     <span class="s2">* Draws the barcode block annotations for position, size, and raw value on the supplied canvas.</span>
+     <span class="s2">*/</span>
+    @Override
+    <span class="s0">public void </span>draw(Canvas canvas) {
+        <span class="s0">if </span>(barcode == <span class="s0">null</span>) {
+            <span class="s0">throw new </span>IllegalStateException(<span class="s4">&quot;Attempting to draw a null barcode.&quot;</span>);
+        }
+
+        <span class="s2">// Draws the bounding box around the BarcodeBlock.</span>
+        RectF rect = <span class="s0">new </span>RectF(barcode.getBoundingBox());
+        rect.left = translateX(rect.left);
+        rect.top = translateY(rect.top);
+        rect.right = translateX(rect.right);
+        rect.bottom = translateY(rect.bottom);
+        <span class="s0">if </span>(percentageOfOccupancy &gt; <span class="s3">0 </span>&amp;&amp; percentageOfOccupancy &lt; <span class="s3">40</span>)
+        rectPaint.setColor(Color.GREEN);
+        <span class="s0">else if </span>(percentageOfOccupancy &gt; <span class="s3">40 </span>&amp;&amp; percentageOfOccupancy &lt; <span class="s3">75</span>)
+            rectPaint.setColor(Color.YELLOW);
+        <span class="s0">else if </span>(percentageOfOccupancy &gt; <span class="s3">75 </span>&amp;&amp; percentageOfOccupancy &lt; <span class="s3">100</span>)
+            rectPaint.setColor(Color.RED);
+        rectPaint.setAlpha(<span class="s3">150</span>);
+
+
+        canvas.drawRect(rect, rectPaint);
+
+
+
+    }
+}
+</pre>
+</body>
+</html>

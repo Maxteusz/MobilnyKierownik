@@ -1,0 +1,748 @@
+<html>
+<head>
+<title>CameraSource.java</title>
+<meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+<style type="text/css">
+.s0 { color: #000080; font-weight: bold;}
+.s1 { color: #000000;}
+.s2 { color: #808080; font-style: italic;}
+.s3 { color: #008000; font-weight: bold;}
+.s4 { color: #0000ff;}
+.s5 { color: #808080; font-style: italic;}
+.s6 { color: #808080; font-weight: bold; font-style: italic;}
+</style>
+</head>
+<body bgcolor="#ffffff">
+<table CELLSPACING=0 CELLPADDING=5 COLS=1 WIDTH="100%" BGCOLOR="#c0c0c0" >
+<tr><td><center>
+<font face="Arial, Helvetica" color="#000000">
+CameraSource.java</font>
+</center></td></tr></table>
+<pre><span class="s0">package </span>com.example.myapplication;
+
+<span class="s0">import </span>android.Manifest;
+<span class="s0">import </span>android.annotation.SuppressLint;
+<span class="s0">import </span>android.app.Activity;
+<span class="s0">import </span>android.content.Context;
+<span class="s0">import </span>android.graphics.ImageFormat;
+<span class="s0">import </span>android.graphics.SurfaceTexture;
+<span class="s0">import </span>android.hardware.Camera;
+<span class="s0">import </span>android.hardware.Camera.CameraInfo;
+
+<span class="s0">import </span>android.util.Log;
+<span class="s0">import </span>android.view.Surface;
+<span class="s0">import </span>android.view.SurfaceHolder;
+<span class="s0">import </span>android.view.WindowManager;
+
+<span class="s0">import </span>androidx.annotation.Nullable;
+<span class="s0">import </span>androidx.annotation.RequiresPermission;
+
+<span class="s0">import </span>com.google.android.gms.common.images.Size;
+
+<span class="s0">import </span>java.io.IOException;
+<span class="s0">import </span>java.lang.Thread.State;
+<span class="s0">import </span>java.nio.ByteBuffer;
+<span class="s0">import </span>java.util.ArrayList;
+<span class="s0">import </span>java.util.IdentityHashMap;
+<span class="s0">import </span>java.util.List;
+<span class="s0">import </span>java.util.Map;
+
+<span class="s2">/**</span>
+ <span class="s2">* Manages the camera and allows UI updates on top of it (e.g. overlaying extra Graphics or</span>
+ <span class="s2">* displaying extra information). This receives preview frames from the camera at a specified rate,</span>
+ <span class="s2">* sending those frames to child classes' detectors / classifiers as fast as it is able to process.</span>
+ <span class="s2">*/</span>
+@SuppressLint(<span class="s3">&quot;MissingPermission&quot;</span>)
+<span class="s0">public class </span>CameraSource {
+    @SuppressLint(<span class="s3">&quot;InlinedApi&quot;</span>)
+    <span class="s0">public static final int </span>CAMERA_FACING_BACK = CameraInfo.CAMERA_FACING_BACK;
+
+    @SuppressLint(<span class="s3">&quot;InlinedApi&quot;</span>)
+    <span class="s0">public static final int </span>CAMERA_FACING_FRONT = CameraInfo.CAMERA_FACING_FRONT;
+
+    <span class="s0">private static final </span>String TAG = <span class="s3">&quot;MIDemoApp:CameraSource&quot;</span>;
+
+    <span class="s2">/**</span>
+     <span class="s2">* The dummy surface texture must be assigned a chosen name. Since we never use an OpenGL context,</span>
+     <span class="s2">* we can choose any ID we want here. The dummy surface texture is not a crazy hack - it is</span>
+     <span class="s2">* actually how the camera team recommends using the camera without a preview.</span>
+     <span class="s2">*/</span>
+    <span class="s0">private static final int </span>DUMMY_TEXTURE_NAME = <span class="s4">100</span>;
+
+    <span class="s2">/**</span>
+     <span class="s2">* If the absolute difference between a preview size aspect ratio and a picture size aspect ratio</span>
+     <span class="s2">* is less than this tolerance, they are considered to be the same aspect ratio.</span>
+     <span class="s2">*/</span>
+    <span class="s0">private static final float </span>ASPECT_RATIO_TOLERANCE = <span class="s4">0.01f</span>;
+
+    <span class="s0">protected </span>Activity activity;
+
+    <span class="s0">private </span>Camera camera;
+
+    <span class="s0">protected int </span>facing = CAMERA_FACING_BACK;
+
+    <span class="s2">/**</span>
+     <span class="s2">* Rotation of the device, and thus the associated preview images captured from the device. See</span>
+     <span class="s2">* Frame.Metadata#getRotation().</span>
+     <span class="s2">*/</span>
+    <span class="s0">private int </span>rotation;
+
+    <span class="s0">private </span>Size previewSize;
+
+    <span class="s2">// These values may be requested by the caller.  Due to hardware limitations, we may need to</span>
+    <span class="s2">// select close, but not exactly the same values for these.</span>
+    <span class="s0">private final float </span>requestedFps = <span class="s4">20.0f</span>;
+    <span class="s0">private final int </span>requestedPreviewWidth = <span class="s4">640</span>;
+    <span class="s0">private final int </span>requestedPreviewHeight = <span class="s4">480</span>;
+    <span class="s0">private final boolean </span>requestedAutoFocus = <span class="s0">true</span>;
+
+    <span class="s2">// These instances need to be held onto to avoid GC of their underlying resources.  Even though</span>
+    <span class="s2">// these aren't used outside of the method that creates them, they still must have hard</span>
+    <span class="s2">// references maintained to them.</span>
+    <span class="s0">private </span>SurfaceTexture dummySurfaceTexture;
+    <span class="s0">private final </span>GraphicOverlay graphicOverlay;
+
+    <span class="s2">// True if a SurfaceTexture is being used for the preview, false if a SurfaceHolder is being</span>
+    <span class="s2">// used for the preview.  We want to be compatible back to Gingerbread, but SurfaceTexture</span>
+    <span class="s2">// wasn't introduced until Honeycomb.  Since the interface cannot use a SurfaceTexture, if the</span>
+    <span class="s2">// developer wants to display a preview we must use a SurfaceHolder.  If the developer doesn't</span>
+    <span class="s2">// want to display a preview we use a SurfaceTexture if we are running at least Honeycomb.</span>
+    <span class="s0">private boolean </span>usingSurfaceTexture;
+
+    <span class="s2">/**</span>
+     <span class="s2">* Dedicated thread and associated runnable for calling into the detector with frames, as the</span>
+     <span class="s2">* frames become available from the camera.</span>
+     <span class="s2">*/</span>
+    <span class="s0">private </span>Thread processingThread;
+
+    <span class="s0">private final </span>FrameProcessingRunnable processingRunnable;
+
+    <span class="s0">private final </span>Object processorLock = <span class="s0">new </span>Object();
+    <span class="s2">// @GuardedBy(&quot;processorLock&quot;)</span>
+    <span class="s0">private </span>VisionImageProcessor frameProcessor;
+
+    <span class="s2">/**</span>
+     <span class="s2">* Map to convert between a byte array, received from the camera, and its associated byte buffer.</span>
+     <span class="s2">* We use byte buffers internally because this is a more efficient way to call into native code</span>
+     <span class="s2">* later (avoids a potential copy).</span>
+     <span class="s2">*</span>
+     <span class="s2">* </span><span class="s5">&lt;p&gt;&lt;b&gt;</span><span class="s2">Note:</span><span class="s5">&lt;/b&gt; </span><span class="s2">uses IdentityHashMap here instead of HashMap because the behavior of an array's</span>
+     <span class="s2">* equals, hashCode and toString methods is both useless and unexpected. IdentityHashMap enforces</span>
+     <span class="s2">* identity ('==') check on the keys.</span>
+     <span class="s2">*/</span>
+    <span class="s0">private final </span>Map&lt;<span class="s0">byte</span>[], ByteBuffer&gt; bytesToByteBuffer = <span class="s0">new </span>IdentityHashMap&lt;&gt;();
+
+    <span class="s0">public </span>CameraSource(Activity activity, GraphicOverlay overlay) {
+        <span class="s0">this</span>.activity = activity;
+        graphicOverlay = overlay;
+        graphicOverlay.clear();
+        processingRunnable = <span class="s0">new </span>FrameProcessingRunnable();
+
+        <span class="s0">if </span>(Camera.getNumberOfCameras() == <span class="s4">1</span>) {
+            CameraInfo cameraInfo = <span class="s0">new </span>CameraInfo();
+            Camera.getCameraInfo(<span class="s4">0</span>, cameraInfo);
+            facing = cameraInfo.facing;
+        }
+    }
+
+    <span class="s2">// ==============================================================================================</span>
+    <span class="s2">// Public</span>
+    <span class="s2">// ==============================================================================================</span>
+
+    <span class="s2">/** Stops the camera and releases the resources of the camera and underlying detector. */</span>
+    <span class="s0">public void </span>release() {
+        <span class="s0">synchronized </span>(processorLock) {
+            stop();
+            processingRunnable.release();
+            cleanScreen();
+
+            <span class="s0">if </span>(frameProcessor != <span class="s0">null</span>) {
+                frameProcessor.stop();
+            }
+        }
+    }
+
+    <span class="s2">/**</span>
+     <span class="s2">* Opens the camera and starts sending preview frames to the underlying detector. The preview</span>
+     <span class="s2">* frames are not displayed.</span>
+     <span class="s2">*</span>
+     <span class="s2">* </span><span class="s6">@throws </span><span class="s2">IOException if the camera's preview texture or display could not be initialized</span>
+     <span class="s2">*/</span>
+    @SuppressLint(<span class="s3">&quot;MissingPermission&quot;</span>)
+    @RequiresPermission(Manifest.permission.CAMERA)
+    <span class="s0">public synchronized </span>CameraSource start() <span class="s0">throws </span>IOException {
+        <span class="s0">if </span>(camera != <span class="s0">null</span>) {
+            <span class="s0">return this</span>;
+        }
+
+        camera = createCamera();
+        dummySurfaceTexture = <span class="s0">new </span>SurfaceTexture(DUMMY_TEXTURE_NAME);
+        camera.setPreviewTexture(dummySurfaceTexture);
+        usingSurfaceTexture = <span class="s0">true</span>;
+        camera.startPreview();
+
+        processingThread = <span class="s0">new </span>Thread(processingRunnable);
+        processingRunnable.setActive(<span class="s0">true</span>);
+        processingThread.start();
+        <span class="s0">return this</span>;
+    }
+
+    <span class="s2">/**</span>
+     <span class="s2">* Opens the camera and starts sending preview frames to the underlying detector. The supplied</span>
+     <span class="s2">* surface holder is used for the preview so frames can be displayed to the user.</span>
+     <span class="s2">*</span>
+     <span class="s2">* </span><span class="s6">@param </span><span class="s2">surfaceHolder the surface holder to use for the preview frames</span>
+     <span class="s2">* </span><span class="s6">@throws </span><span class="s2">IOException if the supplied surface holder could not be used as the preview display</span>
+     <span class="s2">*/</span>
+    @RequiresPermission(Manifest.permission.CAMERA)
+    <span class="s0">public synchronized </span>CameraSource start(SurfaceHolder surfaceHolder) <span class="s0">throws </span>IOException {
+        <span class="s0">if </span>(camera != <span class="s0">null</span>) {
+            <span class="s0">return this</span>;
+        }
+
+        camera = createCamera();
+        camera.setPreviewDisplay(surfaceHolder);
+        camera.startPreview();
+
+        processingThread = <span class="s0">new </span>Thread(processingRunnable);
+        processingRunnable.setActive(<span class="s0">true</span>);
+        processingThread.start();
+
+        usingSurfaceTexture = <span class="s0">false</span>;
+        <span class="s0">return this</span>;
+    }
+
+    <span class="s2">/**</span>
+     <span class="s2">* Closes the camera and stops sending frames to the underlying frame detector.</span>
+     <span class="s2">*</span>
+     <span class="s2">* </span><span class="s5">&lt;p&gt;</span><span class="s2">This camera source may be restarted again by calling {</span><span class="s6">@link </span><span class="s2">#start()} or {</span><span class="s6">@link</span>
+     <span class="s2">* #start(SurfaceHolder)}.</span>
+     <span class="s2">*</span>
+     <span class="s2">* </span><span class="s5">&lt;p&gt;</span><span class="s2">Call {</span><span class="s6">@link </span><span class="s2">#release()} instead to completely shut down this camera source and release the</span>
+     <span class="s2">* resources of the underlying detector.</span>
+     <span class="s2">*/</span>
+    <span class="s0">public synchronized void </span>stop() {
+        processingRunnable.setActive(<span class="s0">false</span>);
+        <span class="s0">if </span>(processingThread != <span class="s0">null</span>) {
+            <span class="s0">try </span>{
+                <span class="s2">// Wait for the thread to complete to ensure that we can't have multiple threads</span>
+                <span class="s2">// executing at the same time (i.e., which would happen if we called start too</span>
+                <span class="s2">// quickly after stop).</span>
+                processingThread.join();
+            } <span class="s0">catch </span>(InterruptedException e) {
+                Log.d(TAG, <span class="s3">&quot;Frame processing thread interrupted on release.&quot;</span>);
+            }
+            processingThread = <span class="s0">null</span>;
+        }
+
+        <span class="s0">if </span>(camera != <span class="s0">null</span>) {
+            camera.stopPreview();
+            camera.setPreviewCallbackWithBuffer(<span class="s0">null</span>);
+            <span class="s0">try </span>{
+                <span class="s0">if </span>(usingSurfaceTexture) {
+                    camera.setPreviewTexture(<span class="s0">null</span>);
+                } <span class="s0">else </span>{
+                    camera.setPreviewDisplay(<span class="s0">null</span>);
+                }
+            } <span class="s0">catch </span>(Exception e) {
+                Log.e(TAG, <span class="s3">&quot;Failed to clear camera preview: &quot; </span>+ e);
+            }
+            camera.release();
+            camera = <span class="s0">null</span>;
+        }
+
+        <span class="s2">// Release the reference to any image buffers, since these will no longer be in use.</span>
+        bytesToByteBuffer.clear();
+    }
+
+    <span class="s2">/** Changes the facing of the camera. */</span>
+    <span class="s0">public synchronized void </span>setFacing(<span class="s0">int </span>facing) {
+        <span class="s0">if </span>((facing != CAMERA_FACING_BACK) &amp;&amp; (facing != CAMERA_FACING_FRONT)) {
+            <span class="s0">throw new </span>IllegalArgumentException(<span class="s3">&quot;Invalid camera: &quot; </span>+ facing);
+        }
+        <span class="s0">this</span>.facing = facing;
+    }
+
+    <span class="s2">/** Returns the preview size that is currently in use by the underlying camera. */</span>
+    <span class="s0">public </span>Size getPreviewSize() {
+        <span class="s0">return </span>previewSize;
+    }
+
+    <span class="s2">/**</span>
+     <span class="s2">* Returns the selected camera; one of {</span><span class="s6">@link </span><span class="s2">#CAMERA_FACING_BACK} or {</span><span class="s6">@link</span>
+     <span class="s2">* #CAMERA_FACING_FRONT}.</span>
+     <span class="s2">*/</span>
+    <span class="s0">public int </span>getCameraFacing() {
+        <span class="s0">return </span>facing;
+    }
+
+    <span class="s2">/**</span>
+     <span class="s2">* Opens the camera and applies the user settings.</span>
+     <span class="s2">*</span>
+     <span class="s2">* </span><span class="s6">@throws </span><span class="s2">IOException if camera cannot be found or preview cannot be processed</span>
+     <span class="s2">*/</span>
+    @SuppressLint(<span class="s3">&quot;InlinedApi&quot;</span>)
+    <span class="s0">private </span>Camera createCamera() <span class="s0">throws </span>IOException {
+        <span class="s0">int </span>requestedCameraId = getIdForRequestedCamera(facing);
+        <span class="s0">if </span>(requestedCameraId == -<span class="s4">1</span>) {
+            <span class="s0">throw new </span>IOException(<span class="s3">&quot;Could not find requested camera.&quot;</span>);
+        }
+        Camera camera = Camera.open(requestedCameraId);
+
+        SizePair sizePair = selectSizePair(camera, requestedPreviewWidth, requestedPreviewHeight);
+        <span class="s0">if </span>(sizePair == <span class="s0">null</span>) {
+            <span class="s0">throw new </span>IOException(<span class="s3">&quot;Could not find suitable preview size.&quot;</span>);
+        }
+        Size pictureSize = sizePair.pictureSize();
+        previewSize = sizePair.previewSize();
+
+        <span class="s0">int</span>[] previewFpsRange = selectPreviewFpsRange(camera, requestedFps);
+        <span class="s0">if </span>(previewFpsRange == <span class="s0">null</span>) {
+            <span class="s0">throw new </span>IOException(<span class="s3">&quot;Could not find suitable preview frames per second range.&quot;</span>);
+        }
+
+        Camera.Parameters parameters = camera.getParameters();
+
+        <span class="s0">if </span>(pictureSize != <span class="s0">null</span>) {
+            parameters.setPictureSize(pictureSize.getWidth(), pictureSize.getHeight());
+        }
+        parameters.setPreviewSize(previewSize.getWidth(), previewSize.getHeight());
+        parameters.setPreviewFpsRange(
+                previewFpsRange[Camera.Parameters.PREVIEW_FPS_MIN_INDEX],
+                previewFpsRange[Camera.Parameters.PREVIEW_FPS_MAX_INDEX]);
+        parameters.setPreviewFormat(ImageFormat.NV21);
+
+        setRotation(camera, parameters, requestedCameraId);
+
+        <span class="s0">if </span>(requestedAutoFocus) {
+            <span class="s0">if </span>(parameters
+                    .getSupportedFocusModes()
+                    .contains(Camera.Parameters.FOCUS_MODE_CONTINUOUS_VIDEO)) {
+                parameters.setFocusMode(Camera.Parameters.FOCUS_MODE_CONTINUOUS_VIDEO);
+            } <span class="s0">else </span>{
+                Log.i(TAG, <span class="s3">&quot;Camera auto focus is not supported on this device.&quot;</span>);
+            }
+        }
+
+        camera.setParameters(parameters);
+
+        <span class="s2">// Four frame buffers are needed for working with the camera:</span>
+        <span class="s2">//</span>
+        <span class="s2">//   one for the frame that is currently being executed upon in doing detection</span>
+        <span class="s2">//   one for the next pending frame to process immediately upon completing detection</span>
+        <span class="s2">//   two for the frames that the camera uses to populate future preview images</span>
+        <span class="s2">//</span>
+        <span class="s2">// Through trial and error it appears that two free buffers, in addition to the two buffers</span>
+        <span class="s2">// used in this code, are needed for the camera to work properly.  Perhaps the camera has</span>
+        <span class="s2">// one thread for acquiring images, and another thread for calling into user code.  If only</span>
+        <span class="s2">// three buffers are used, then the camera will spew thousands of warning messages when</span>
+        <span class="s2">// detection takes a non-trivial amount of time.</span>
+        camera.setPreviewCallbackWithBuffer(<span class="s0">new </span>CameraPreviewCallback());
+        camera.addCallbackBuffer(createPreviewBuffer(previewSize));
+        camera.addCallbackBuffer(createPreviewBuffer(previewSize));
+        camera.addCallbackBuffer(createPreviewBuffer(previewSize));
+        camera.addCallbackBuffer(createPreviewBuffer(previewSize));
+
+        <span class="s0">return </span>camera;
+    }
+
+    <span class="s2">/**</span>
+     <span class="s2">* Gets the id for the camera specified by the direction it is facing. Returns -1 if no such</span>
+     <span class="s2">* camera was found.</span>
+     <span class="s2">*</span>
+     <span class="s2">* </span><span class="s6">@param </span><span class="s2">facing the desired camera (front-facing or rear-facing)</span>
+     <span class="s2">*/</span>
+    <span class="s0">private static int </span>getIdForRequestedCamera(<span class="s0">int </span>facing) {
+        CameraInfo cameraInfo = <span class="s0">new </span>CameraInfo();
+        <span class="s0">for </span>(<span class="s0">int </span>i = <span class="s4">0</span>; i &lt; Camera.getNumberOfCameras(); ++i) {
+            Camera.getCameraInfo(i, cameraInfo);
+            <span class="s0">if </span>(cameraInfo.facing == facing) {
+                <span class="s0">return </span>i;
+            }
+        }
+        <span class="s0">return </span>-<span class="s4">1</span>;
+    }
+
+    <span class="s2">/**</span>
+     <span class="s2">* Selects the most suitable preview and picture size, given the desired width and height.</span>
+     <span class="s2">*</span>
+     <span class="s2">* </span><span class="s5">&lt;p&gt;</span><span class="s2">Even though we only need to find the preview size, it's necessary to find both the preview</span>
+     <span class="s2">* size and the picture size of the camera together, because these need to have the same aspect</span>
+     <span class="s2">* ratio. On some hardware, if you would only set the preview size, you will get a distorted</span>
+     <span class="s2">* image.</span>
+     <span class="s2">*</span>
+     <span class="s2">* </span><span class="s6">@param </span><span class="s2">camera the camera to select a preview size from</span>
+     <span class="s2">* </span><span class="s6">@param </span><span class="s2">desiredWidth the desired width of the camera preview frames</span>
+     <span class="s2">* </span><span class="s6">@param </span><span class="s2">desiredHeight the desired height of the camera preview frames</span>
+     <span class="s2">* </span><span class="s6">@return </span><span class="s2">the selected preview and picture size pair</span>
+     <span class="s2">*/</span>
+    <span class="s0">private static </span>SizePair selectSizePair(Camera camera, <span class="s0">int </span>desiredWidth, <span class="s0">int </span>desiredHeight) {
+        List&lt;SizePair&gt; validPreviewSizes = generateValidPreviewSizeList(camera);
+
+        <span class="s2">// The method for selecting the best size is to minimize the sum of the differences between</span>
+        <span class="s2">// the desired values and the actual values for width and height.  This is certainly not the</span>
+        <span class="s2">// only way to select the best size, but it provides a decent tradeoff between using the</span>
+        <span class="s2">// closest aspect ratio vs. using the closest pixel area.</span>
+        SizePair selectedPair = <span class="s0">null</span>;
+        <span class="s0">int </span>minDiff = Integer.MAX_VALUE;
+        <span class="s0">for </span>(SizePair sizePair : validPreviewSizes) {
+            Size size = sizePair.previewSize();
+            <span class="s0">int </span>diff =
+                    Math.abs(size.getWidth() - desiredWidth) + Math.abs(size.getHeight() - desiredHeight);
+            <span class="s0">if </span>(diff &lt; minDiff) {
+                selectedPair = sizePair;
+                minDiff = diff;
+            }
+        }
+
+        <span class="s0">return </span>selectedPair;
+    }
+
+    <span class="s2">/**</span>
+     <span class="s2">* Stores a preview size and a corresponding same-aspect-ratio picture size. To avoid distorted</span>
+     <span class="s2">* preview images on some devices, the picture size must be set to a size that is the same aspect</span>
+     <span class="s2">* ratio as the preview size or the preview may end up being distorted. If the picture size is</span>
+     <span class="s2">* null, then there is no picture size with the same aspect ratio as the preview size.</span>
+     <span class="s2">*/</span>
+    <span class="s0">private static class </span>SizePair {
+        <span class="s0">private final </span>Size preview;
+        <span class="s0">private </span>Size picture;
+
+        SizePair(
+                android.hardware.Camera.Size previewSize,
+                @Nullable android.hardware.Camera.Size pictureSize) {
+            preview = <span class="s0">new </span>Size(previewSize.width, previewSize.height);
+            <span class="s0">if </span>(pictureSize != <span class="s0">null</span>) {
+                picture = <span class="s0">new </span>Size(pictureSize.width, pictureSize.height);
+            }
+        }
+
+        Size previewSize() {
+            <span class="s0">return </span>preview;
+        }
+
+        @Nullable
+        Size pictureSize() {
+            <span class="s0">return </span>picture;
+        }
+    }
+
+    <span class="s2">/**</span>
+     <span class="s2">* Generates a list of acceptable preview sizes. Preview sizes are not acceptable if there is not</span>
+     <span class="s2">* a corresponding picture size of the same aspect ratio. If there is a corresponding picture size</span>
+     <span class="s2">* of the same aspect ratio, the picture size is paired up with the preview size.</span>
+     <span class="s2">*</span>
+     <span class="s2">* </span><span class="s5">&lt;p&gt;</span><span class="s2">This is necessary because even if we don't use still pictures, the still picture size must</span>
+     <span class="s2">* be set to a size that is the same aspect ratio as the preview size we choose. Otherwise, the</span>
+     <span class="s2">* preview images may be distorted on some devices.</span>
+     <span class="s2">*/</span>
+    <span class="s0">private static </span>List&lt;SizePair&gt; generateValidPreviewSizeList(Camera camera) {
+        Camera.Parameters parameters = camera.getParameters();
+        List&lt;Camera.Size&gt; supportedPreviewSizes =
+                parameters.getSupportedPreviewSizes();
+        List&lt;Camera.Size&gt; supportedPictureSizes =
+                parameters.getSupportedPictureSizes();
+        List&lt;SizePair&gt; validPreviewSizes = <span class="s0">new </span>ArrayList&lt;&gt;();
+        <span class="s0">for </span>(android.hardware.Camera.Size previewSize : supportedPreviewSizes) {
+            <span class="s0">float </span>previewAspectRatio = (<span class="s0">float</span>) previewSize.width / (<span class="s0">float</span>) previewSize.height;
+
+            <span class="s2">// By looping through the picture sizes in order, we favor the higher resolutions.</span>
+            <span class="s2">// We choose the highest resolution in order to support taking the full resolution</span>
+            <span class="s2">// picture later.</span>
+            <span class="s0">for </span>(android.hardware.Camera.Size pictureSize : supportedPictureSizes) {
+                <span class="s0">float </span>pictureAspectRatio = (<span class="s0">float</span>) pictureSize.width / (<span class="s0">float</span>) pictureSize.height;
+                <span class="s0">if </span>(Math.abs(previewAspectRatio - pictureAspectRatio) &lt; ASPECT_RATIO_TOLERANCE) {
+                    validPreviewSizes.add(<span class="s0">new </span>SizePair(previewSize, pictureSize));
+                    <span class="s0">break</span>;
+                }
+            }
+        }
+
+        <span class="s2">// If there are no picture sizes with the same aspect ratio as any preview sizes, allow all</span>
+        <span class="s2">// of the preview sizes and hope that the camera can handle it.  Probably unlikely, but we</span>
+        <span class="s2">// still account for it.</span>
+        <span class="s0">if </span>(validPreviewSizes.size() == <span class="s4">0</span>) {
+            Log.w(TAG, <span class="s3">&quot;No preview sizes have a corresponding same-aspect-ratio picture size&quot;</span>);
+            <span class="s0">for </span>(android.hardware.Camera.Size previewSize : supportedPreviewSizes) {
+                <span class="s2">// The null picture size will let us know that we shouldn't set a picture size.</span>
+                validPreviewSizes.add(<span class="s0">new </span>SizePair(previewSize, <span class="s0">null</span>));
+            }
+        }
+
+        <span class="s0">return </span>validPreviewSizes;
+    }
+
+    <span class="s2">/**</span>
+     <span class="s2">* Selects the most suitable preview frames per second range, given the desired frames per second.</span>
+     <span class="s2">*</span>
+     <span class="s2">* </span><span class="s6">@param </span><span class="s2">camera the camera to select a frames per second range from</span>
+     <span class="s2">* </span><span class="s6">@param </span><span class="s2">desiredPreviewFps the desired frames per second for the camera preview frames</span>
+     <span class="s2">* </span><span class="s6">@return </span><span class="s2">the selected preview frames per second range</span>
+     <span class="s2">*/</span>
+    @SuppressLint(<span class="s3">&quot;InlinedApi&quot;</span>)
+    <span class="s0">private static int</span>[] selectPreviewFpsRange(Camera camera, <span class="s0">float </span>desiredPreviewFps) {
+        <span class="s2">// The camera API uses integers scaled by a factor of 1000 instead of floating-point frame</span>
+        <span class="s2">// rates.</span>
+        <span class="s0">int </span>desiredPreviewFpsScaled = (<span class="s0">int</span>) (desiredPreviewFps * <span class="s4">1000.0f</span>);
+
+        <span class="s2">// The method for selecting the best range is to minimize the sum of the differences between</span>
+        <span class="s2">// the desired value and the upper and lower bounds of the range.  This may select a range</span>
+        <span class="s2">// that the desired value is outside of, but this is often preferred.  For example, if the</span>
+        <span class="s2">// desired frame rate is 29.97, the range (30, 30) is probably more desirable than the</span>
+        <span class="s2">// range (15, 30).</span>
+        <span class="s0">int</span>[] selectedFpsRange = <span class="s0">null</span>;
+        <span class="s0">int </span>minDiff = Integer.MAX_VALUE;
+        List&lt;<span class="s0">int</span>[]&gt; previewFpsRangeList = camera.getParameters().getSupportedPreviewFpsRange();
+        <span class="s0">for </span>(<span class="s0">int</span>[] range : previewFpsRangeList) {
+            <span class="s0">int </span>deltaMin = desiredPreviewFpsScaled - range[Camera.Parameters.PREVIEW_FPS_MIN_INDEX];
+            <span class="s0">int </span>deltaMax = desiredPreviewFpsScaled - range[Camera.Parameters.PREVIEW_FPS_MAX_INDEX];
+            <span class="s0">int </span>diff = Math.abs(deltaMin) + Math.abs(deltaMax);
+            <span class="s0">if </span>(diff &lt; minDiff) {
+                selectedFpsRange = range;
+                minDiff = diff;
+            }
+        }
+        <span class="s0">return </span>selectedFpsRange;
+    }
+
+    <span class="s2">/**</span>
+     <span class="s2">* Calculates the correct rotation for the given camera id and sets the rotation in the</span>
+     <span class="s2">* parameters. It also sets the camera's display orientation and rotation.</span>
+     <span class="s2">*</span>
+     <span class="s2">* </span><span class="s6">@param </span><span class="s2">parameters the camera parameters for which to set the rotation</span>
+     <span class="s2">* </span><span class="s6">@param </span><span class="s2">cameraId the camera id to set rotation based on</span>
+     <span class="s2">*/</span>
+    <span class="s0">private void </span>setRotation(Camera camera, Camera.Parameters parameters, <span class="s0">int </span>cameraId) {
+        WindowManager windowManager = (WindowManager) activity.getSystemService(Context.WINDOW_SERVICE);
+        <span class="s0">int </span>degrees = <span class="s4">0</span>;
+        <span class="s0">int </span>rotation = windowManager.getDefaultDisplay().getRotation();
+        <span class="s0">switch </span>(rotation) {
+            <span class="s0">case </span>Surface.ROTATION_0:
+                degrees = <span class="s4">0</span>;
+                <span class="s0">break</span>;
+            <span class="s0">case </span>Surface.ROTATION_90:
+                degrees = <span class="s4">90</span>;
+                <span class="s0">break</span>;
+            <span class="s0">case </span>Surface.ROTATION_180:
+                degrees = <span class="s4">180</span>;
+                <span class="s0">break</span>;
+            <span class="s0">case </span>Surface.ROTATION_270:
+                degrees = <span class="s4">270</span>;
+                <span class="s0">break</span>;
+            <span class="s0">default</span>:
+                Log.e(TAG, <span class="s3">&quot;Bad rotation value: &quot; </span>+ rotation);
+        }
+
+        CameraInfo cameraInfo = <span class="s0">new </span>CameraInfo();
+        Camera.getCameraInfo(cameraId, cameraInfo);
+
+        <span class="s0">int </span>angle;
+        <span class="s0">int </span>displayAngle;
+        <span class="s0">if </span>(cameraInfo.facing == Camera.CameraInfo.CAMERA_FACING_FRONT) {
+            angle = (cameraInfo.orientation + degrees) % <span class="s4">360</span>;
+            displayAngle = (<span class="s4">360 </span>- angle) % <span class="s4">360</span>; <span class="s2">// compensate for it being mirrored</span>
+        } <span class="s0">else </span>{ <span class="s2">// back-facing</span>
+            angle = (cameraInfo.orientation - degrees + <span class="s4">360</span>) % <span class="s4">360</span>;
+            displayAngle = angle;
+        }
+
+        <span class="s2">// This corresponds to the rotation constants.</span>
+        <span class="s0">this</span>.rotation = angle / <span class="s4">90</span>;
+
+        camera.setDisplayOrientation(displayAngle);
+        parameters.setRotation(angle);
+    }
+
+    <span class="s2">/**</span>
+     <span class="s2">* Creates one buffer for the camera preview callback. The size of the buffer is based off of the</span>
+     <span class="s2">* camera preview size and the format of the camera image.</span>
+     <span class="s2">*</span>
+     <span class="s2">* </span><span class="s6">@return </span><span class="s2">a new preview buffer of the appropriate size for the current camera settings</span>
+     <span class="s2">*/</span>
+    @SuppressLint(<span class="s3">&quot;InlinedApi&quot;</span>)
+    <span class="s0">private byte</span>[] createPreviewBuffer(Size previewSize) {
+        <span class="s0">int </span>bitsPerPixel = ImageFormat.getBitsPerPixel(ImageFormat.NV21);
+        <span class="s0">long </span>sizeInBits = (<span class="s0">long</span>) previewSize.getHeight() * previewSize.getWidth() * bitsPerPixel;
+        <span class="s0">int </span>bufferSize = (<span class="s0">int</span>) Math.ceil(sizeInBits / <span class="s4">8.0d</span>) + <span class="s4">1</span>;
+
+        <span class="s2">// Creating the byte array this way and wrapping it, as opposed to using .allocate(),</span>
+        <span class="s2">// should guarantee that there will be an array to work with.</span>
+        <span class="s0">byte</span>[] byteArray = <span class="s0">new byte</span>[bufferSize];
+        ByteBuffer buffer = ByteBuffer.wrap(byteArray);
+        <span class="s0">if </span>(!buffer.hasArray() || (buffer.array() != byteArray)) {
+            <span class="s2">// I don't think that this will ever happen.  But if it does, then we wouldn't be</span>
+            <span class="s2">// passing the preview content to the underlying detector later.</span>
+            <span class="s0">throw new </span>IllegalStateException(<span class="s3">&quot;Failed to create valid buffer for camera source.&quot;</span>);
+        }
+
+        bytesToByteBuffer.put(byteArray, buffer);
+        <span class="s0">return </span>byteArray;
+    }
+
+    <span class="s2">// ==============================================================================================</span>
+    <span class="s2">// Frame processing</span>
+    <span class="s2">// ==============================================================================================</span>
+
+    <span class="s2">/** Called when the camera has a new preview frame. */</span>
+    <span class="s0">private class </span>CameraPreviewCallback <span class="s0">implements </span>Camera.PreviewCallback {
+        @Override
+        <span class="s0">public void </span>onPreviewFrame(<span class="s0">byte</span>[] data, Camera camera) {
+            processingRunnable.setNextFrame(data, camera);
+        }
+    }
+
+    <span class="s0">public void </span>setMachineLearningFrameProcessor(VisionImageProcessor processor) {
+        <span class="s0">synchronized </span>(processorLock) {
+            cleanScreen();
+            <span class="s0">if </span>(frameProcessor != <span class="s0">null</span>) {
+                frameProcessor.stop();
+            }
+            frameProcessor = processor;
+        }
+    }
+
+    <span class="s2">/**</span>
+     <span class="s2">* This runnable controls access to the underlying receiver, calling it to process frames when</span>
+     <span class="s2">* available from the camera. This is designed to run detection on frames as fast as possible</span>
+     <span class="s2">* (i.e., without unnecessary context switching or waiting on the next frame).</span>
+     <span class="s2">*</span>
+     <span class="s2">* </span><span class="s5">&lt;p&gt;</span><span class="s2">While detection is running on a frame, new frames may be received from the camera. As these</span>
+     <span class="s2">* frames come in, the most recent frame is held onto as pending. As soon as detection and its</span>
+     <span class="s2">* associated processing is done for the previous frame, detection on the mostly recently received</span>
+     <span class="s2">* frame will immediately start on the same thread.</span>
+     <span class="s2">*/</span>
+    <span class="s0">private class </span>FrameProcessingRunnable <span class="s0">implements </span>Runnable {
+
+        <span class="s2">// This lock guards all of the member variables below.</span>
+        <span class="s0">private final </span>Object lock = <span class="s0">new </span>Object();
+        <span class="s0">private boolean </span>active = <span class="s0">true</span>;
+
+        <span class="s2">// These pending variables hold the state associated with the new frame awaiting processing.</span>
+        <span class="s0">private </span>ByteBuffer pendingFrameData;
+
+        FrameProcessingRunnable() {}
+
+        <span class="s2">/**</span>
+         <span class="s2">* Releases the underlying receiver. This is only safe to do after the associated thread has</span>
+         <span class="s2">* completed, which is managed in camera source's release method above.</span>
+         <span class="s2">*/</span>
+        @SuppressLint(<span class="s3">&quot;Assert&quot;</span>)
+        <span class="s0">void </span>release() {
+            <span class="s0">assert </span>(processingThread.getState() == State.TERMINATED);
+        }
+
+        <span class="s2">/** Marks the runnable as active/not active. Signals any blocked threads to continue. */</span>
+        <span class="s0">void </span>setActive(<span class="s0">boolean </span>active) {
+            <span class="s0">synchronized </span>(lock) {
+                <span class="s0">this</span>.active = active;
+                lock.notifyAll();
+            }
+        }
+
+        <span class="s2">/**</span>
+         <span class="s2">* Sets the frame data received from the camera. This adds the previous unused frame buffer (if</span>
+         <span class="s2">* present) back to the camera, and keeps a pending reference to the frame data for future use.</span>
+         <span class="s2">*/</span>
+        <span class="s0">void </span>setNextFrame(<span class="s0">byte</span>[] data, Camera camera) {
+            <span class="s0">synchronized </span>(lock) {
+                <span class="s0">if </span>(pendingFrameData != <span class="s0">null</span>) {
+                    camera.addCallbackBuffer(pendingFrameData.array());
+                    pendingFrameData = <span class="s0">null</span>;
+                }
+
+                <span class="s0">if </span>(!bytesToByteBuffer.containsKey(data)) {
+                    Log.d(
+                            TAG,
+                            <span class="s3">&quot;Skipping frame. Could not find ByteBuffer associated with the image &quot;</span>
+                                    + <span class="s3">&quot;data from the camera.&quot;</span>);
+                    <span class="s0">return</span>;
+                }
+
+                pendingFrameData = bytesToByteBuffer.get(data);
+
+                <span class="s2">// Notify the processor thread if it is waiting on the next frame (see below).</span>
+                lock.notifyAll();
+            }
+        }
+
+        <span class="s2">/**</span>
+         <span class="s2">* As long as the processing thread is active, this executes detection on frames continuously.</span>
+         <span class="s2">* The next pending frame is either immediately available or hasn't been received yet. Once it</span>
+         <span class="s2">* is available, we transfer the frame info to local variables and run detection on that frame.</span>
+         <span class="s2">* It immediately loops back for the next frame without pausing.</span>
+         <span class="s2">*</span>
+         <span class="s2">* </span><span class="s5">&lt;p&gt;</span><span class="s2">If detection takes longer than the time in between new frames from the camera, this will</span>
+         <span class="s2">* mean that this loop will run without ever waiting on a frame, avoiding any context switching</span>
+         <span class="s2">* or frame acquisition time latency.</span>
+         <span class="s2">*</span>
+         <span class="s2">* </span><span class="s5">&lt;p&gt;</span><span class="s2">If you find that this is using more CPU than you'd like, you should probably decrease the</span>
+         <span class="s2">* FPS setting above to allow for some idle time in between frames.</span>
+         <span class="s2">*/</span>
+        @SuppressLint(<span class="s3">&quot;InlinedApi&quot;</span>)
+        @SuppressWarnings(<span class="s3">&quot;GuardedBy&quot;</span>)
+        @Override
+        <span class="s0">public void </span>run() {
+            ByteBuffer data;
+
+            <span class="s0">while </span>(<span class="s0">true</span>) {
+                <span class="s0">synchronized </span>(lock) {
+                    <span class="s0">while </span>(active &amp;&amp; (pendingFrameData == <span class="s0">null</span>)) {
+                        <span class="s0">try </span>{
+                            <span class="s2">// Wait for the next frame to be received from the camera, since we</span>
+                            <span class="s2">// don't have it yet.</span>
+                            lock.wait();
+                        } <span class="s0">catch </span>(InterruptedException e) {
+                            Log.d(TAG, <span class="s3">&quot;Frame processing loop terminated.&quot;</span>, e);
+                            <span class="s0">return</span>;
+                        }
+                    }
+
+                    <span class="s0">if </span>(!active) {
+                        <span class="s2">// Exit the loop once this camera source is stopped or released.  We check</span>
+                        <span class="s2">// this here, immediately after the wait() above, to handle the case where</span>
+                        <span class="s2">// setActive(false) had been called, triggering the termination of this</span>
+                        <span class="s2">// loop.</span>
+                        <span class="s0">return</span>;
+                    }
+
+                    <span class="s2">// Hold onto the frame data locally, so that we can use this for detection</span>
+                    <span class="s2">// below.  We need to clear pendingFrameData to ensure that this buffer isn't</span>
+                    <span class="s2">// recycled back to the camera before we are done using that data.</span>
+                    data = pendingFrameData;
+                    pendingFrameData = <span class="s0">null</span>;
+                }
+
+                <span class="s2">// The code below needs to run outside of synchronization, because this will allow</span>
+                <span class="s2">// the camera to add pending frame(s) while we are running detection on the current</span>
+                <span class="s2">// frame.</span>
+
+                <span class="s0">try </span>{
+                    <span class="s0">synchronized </span>(processorLock) {
+                        Log.d(TAG, <span class="s3">&quot;Process an image&quot;</span>);
+                        frameProcessor.process(
+                                data,
+                                <span class="s0">new </span>FrameMetadata.Builder()
+                                        .setWidth(previewSize.getWidth())
+                                        .setHeight(previewSize.getHeight())
+                                        .setRotation(rotation)
+                                        .setCameraFacing(facing)
+                                        .build(),
+                                graphicOverlay);
+                    }
+                } <span class="s0">catch </span>(Throwable t) {
+                    Log.e(TAG, <span class="s3">&quot;Exception thrown from receiver.&quot;</span>, t);
+                } <span class="s0">finally </span>{
+                    camera.addCallbackBuffer(data.array());
+                }
+            }
+        }
+    }
+
+    <span class="s2">/** Cleans up graphicOverlay and child classes can do their cleanups as well . */</span>
+    <span class="s0">private void </span>cleanScreen() {
+        graphicOverlay.clear();
+    }
+}
+</pre>
+</body>
+</html>

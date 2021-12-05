@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    tools:context=".DocumentActivity"
+    android:orientation="vertical">
+   <com.google.android.material.card.MaterialCardView
+       android:layout_width="match_parent"
+       android:layout_height="80dp"
+       android:layout_marginTop="-25dp"
+       app:cardElevation="15dp"
+       android:backgroundTint="@color/colorPrimaryDark"
+       app:cardCornerRadius="20dp">
+
+           <TextView
+               android:layout_width="wrap_content"
+               android:layout_height="wrap_content"
+               android:layout_marginTop="10dp"
+               android:layout_gravity="center"
+               android:id="@+id/order_number"
+               android:textColor= "#FFFFFF"
+               android:textSize="20dp"
+               android:textStyle="bold"
+           android:text="Numer Zlecenia"/>
+       </com.google.android.material.card.MaterialCardView>
+
+    <androidx.recyclerview.widget.RecyclerView
+        android:id="@+id/document_recyclerView"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"/>
+
+</LinearLayout>

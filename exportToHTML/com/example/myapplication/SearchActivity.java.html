@@ -1,0 +1,163 @@
+<html>
+<head>
+<title>SearchActivity.java</title>
+<meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+<style type="text/css">
+.s0 { color: #000080; font-weight: bold;}
+.s1 { color: #000000;}
+.s2 { color: #008000; font-weight: bold;}
+.s3 { color: #0000ff;}
+</style>
+</head>
+<body bgcolor="#ffffff">
+<table CELLSPACING=0 CELLPADDING=5 COLS=1 WIDTH="100%" BGCOLOR="#c0c0c0" >
+<tr><td><center>
+<font face="Arial, Helvetica" color="#000000">
+SearchActivity.java</font>
+</center></td></tr></table>
+<pre><span class="s0">package </span>com.example.myapplication;
+
+<span class="s0">import </span>android.content.Intent;
+<span class="s0">import </span>android.graphics.Color;
+<span class="s0">import </span>android.os.Bundle;
+<span class="s0">import </span>android.util.Log;
+<span class="s0">import </span>android.view.View;
+<span class="s0">import </span>android.widget.ArrayAdapter;
+<span class="s0">import </span>android.widget.ListView;
+<span class="s0">import </span>android.widget.TextView;
+<span class="s0">import </span>android.widget.Toast;
+
+<span class="s0">import </span>androidx.appcompat.app.AppCompatActivity;
+
+<span class="s0">import </span>com.google.android.material.button.MaterialButton;
+<span class="s0">import </span>com.google.zxing.integration.android.IntentIntegrator;
+<span class="s0">import </span>com.google.zxing.integration.android.IntentResult;
+
+<span class="s0">import </span>java.sql.Connection;
+<span class="s0">import </span>java.sql.ResultSet;
+<span class="s0">import </span>java.sql.SQLException;
+<span class="s0">import </span>java.sql.Statement;
+<span class="s0">import </span>java.util.ArrayList;
+
+<span class="s0">public class </span>SearchActivity <span class="s0">extends </span>AppCompatActivity {
+
+    MaterialButton button;
+    TextView kodProduct, nameProduct, contraintsDocument,customer;
+    SqlConnection connection;
+    ListView listView;
+    CargoListViewAdapter adapter ;
+    ArrayList&lt;Cargo&gt; cargoArrayList;
+
+
+    @Override
+    <span class="s0">protected void </span>onCreate(Bundle savedInstanceState) {
+        <span class="s0">super</span>.onCreate(savedInstanceState);
+        setContentView(R.layout.activity_search);
+        button = findViewById(R.id.scan_button);
+        listView = findViewById(R.id.list_item);
+        cargoArrayList = <span class="s0">new </span>ArrayList&lt;&gt;();
+      adapter = <span class="s0">new </span>CargoListViewAdapter(<span class="s0">this</span>,cargoArrayList);
+      listView.setAdapter(adapter);
+        getWindow().setStatusBarColor(Color.parseColor(<span class="s2">&quot;#03a9f4&quot;</span>));
+        button.setOnClickListener(<span class="s0">new </span>View.OnClickListener() {
+            @Override
+            <span class="s0">public void </span>onClick(View v) {
+                <span class="s0">new </span>IntentIntegrator(SearchActivity.<span class="s0">this</span>).setCaptureActivity(ScanActivity.<span class="s0">class</span>).setPrompt(<span class="s2">&quot;Zeskanuj Produkt&quot;</span>).setBarcodeImageEnabled(<span class="s0">true</span>).setDesiredBarcodeFormats(IntentIntegrator.ALL_CODE_TYPES).initiateScan();
+
+            }
+        });
+        kodProduct = findViewById(R.id.kod_product);
+        nameProduct = findViewById(R.id.name_product);
+
+        customer = findViewById(R.id.customer);
+        connection = <span class="s0">new </span>SqlConnection();
+    }
+
+    @Override
+    <span class="s0">protected void </span>onActivityResult(<span class="s0">int </span>requestCode, <span class="s0">int </span>resultCode, Intent data) {
+        IntentResult result = IntentIntegrator.parseActivityResult(requestCode, resultCode, data);
+        <span class="s0">if </span>(result != <span class="s0">null</span>) {
+            <span class="s0">if </span>(result.getContents() == <span class="s0">null</span>) {
+                Toast.makeText(<span class="s0">this</span>, <span class="s2">&quot;Błąd odczytania &quot;</span>, Toast.LENGTH_LONG).show();
+            } <span class="s0">else </span>{
+                kodProduct.setText(result.getContents()+<span class="s2">&quot;&quot;</span>);
+                getSourceDocument(result.getContents());
+            }
+        } <span class="s0">else </span>{
+            <span class="s0">super</span>.onActivityResult(requestCode, resultCode, data);
+        }
+    }
+
+    <span class="s0">public </span>String getSourceDocument(String document) {
+        String result = <span class="s2">&quot;&quot;</span>;
+        Connection con = connection.CONN();
+        <span class="s0">if </span>(con != <span class="s0">null</span>) {
+            Statement statement = <span class="s0">null</span>;
+
+            <span class="s0">try </span>{
+                statement = con.createStatement();
+                statement.setQueryTimeout(<span class="s3">5</span>);
+
+                ResultSet rs = <span class="s0">null</span>;
+
+                rs = statement.executeQuery(<span class="s2">&quot;SELECT TrR_TrNId, TrR_FaId</span><span class="s0">\n</span><span class="s2">&quot; </span>+
+                        <span class="s2">&quot;     ,(select TrN_NumerPelny from CDN.TraNag where TrR_TrNId = TrN_TrNID) as [Matka]</span><span class="s0">\n</span><span class="s2">&quot; </span>+
+                        <span class="s2">&quot;  FROM CDN.TraNagRelacje </span><span class="s0">\n</span><span class="s2">&quot; </span>+
+                        <span class="s2">&quot;where  </span><span class="s0">\n</span><span class="s2">&quot; </span>+
+                        <span class="s2">&quot;EXISTS </span><span class="s0">\n</span><span class="s2">&quot; </span>+
+                        <span class="s2">&quot;(select  TrN_NumerPelny from CDN.TraNag where TrR_FaId = TrN_TrNID AND TrN_NumerPelny ='&quot; </span>+ document + <span class="s2">&quot;')&quot;</span>);
+                <span class="s0">if </span>(rs.next()) {
+
+                    result =  rs.getString(<span class="s3">3</span>);
+                    getCargoOnDocument(statement,document);
+
+                }
+                <span class="s0">else </span>{
+
+                    getCargoOnDocument(statement, document);
+                    customer.setText(<span class="s2">&quot;Brak Powiązania&quot;</span>);
+                }
+                con.close();
+            } <span class="s0">catch </span>(SQLException e) {
+                e.printStackTrace();
+                result = <span class="s2">&quot;Brak danych&quot;</span>;
+
+            }
+        }
+        <span class="s0">return </span>result;
+    }
+
+    <span class="s0">public void </span>getCargoOnDocument(Statement statement, String document) {
+        String temp = <span class="s2">&quot;&quot;</span>;
+        ResultSet rs = <span class="s0">null</span>;
+        cargoArrayList.clear();
+
+        <span class="s0">try </span>{
+            rs = statement.executeQuery(<span class="s2">&quot;select Tre_TrNid, TrN_NumerPelny, TrE_TwrNazwa, TrE_Ilosc, TrE_Jm, TrN_OdbNazwa1 from CDN.TraElem </span><span class="s0">\n</span><span class="s2">&quot; </span>+
+                    <span class="s2">&quot;join CDN.TraNag on TrE_TrNId = TrN_TrNId </span><span class="s0">\n</span><span class="s2">&quot; </span>+
+                    <span class="s2">&quot;where TrN_NumerPelny = '&quot; </span>+ document +<span class="s2">&quot;'&quot;</span>);
+
+            <span class="s0">while </span>(rs.next())
+            {
+
+              customer.setText(rs.getString(<span class="s3">6</span>)+<span class="s2">&quot;&quot;</span>);
+              cargoArrayList.add(<span class="s0">new </span>Cargo(rs.getString(<span class="s3">3</span>).toString(),rs.getInt(<span class="s3">4</span>),rs.getString(<span class="s3">5</span>).toLowerCase() ));
+              Log.i(<span class="s2">&quot;Ilośc&quot;</span>, cargoArrayList.size()+<span class="s2">&quot;&quot;</span>);
+            }
+            nameProduct.setText(temp+<span class="s2">&quot;&quot;</span>);
+            adapter.notifyDataSetChanged();
+
+        } <span class="s0">catch </span>(SQLException e) {
+            e.printStackTrace();
+        }
+    }
+
+
+}
+
+
+
+
+</pre>
+</body>
+</html>

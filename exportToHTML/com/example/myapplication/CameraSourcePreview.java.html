@@ -1,0 +1,188 @@
+<html>
+<head>
+<title>CameraSourcePreview.java</title>
+<meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+<style type="text/css">
+.s0 { color: #000080; font-weight: bold;}
+.s1 { color: #000000;}
+.s2 { color: #808080; font-style: italic;}
+.s3 { color: #008000; font-weight: bold;}
+.s4 { color: #0000ff;}
+</style>
+</head>
+<body bgcolor="#ffffff">
+<table CELLSPACING=0 CELLPADDING=5 COLS=1 WIDTH="100%" BGCOLOR="#c0c0c0" >
+<tr><td><center>
+<font face="Arial, Helvetica" color="#000000">
+CameraSourcePreview.java</font>
+</center></td></tr></table>
+<pre><span class="s0">package </span>com.example.myapplication;
+
+<span class="s0">import </span>android.annotation.SuppressLint;
+<span class="s0">import </span>android.content.Context;
+<span class="s0">import </span>android.content.res.Configuration;
+<span class="s0">import </span>android.util.AttributeSet;
+<span class="s0">import </span>android.util.Log;
+<span class="s0">import </span>android.view.SurfaceHolder;
+<span class="s0">import </span>android.view.SurfaceView;
+<span class="s0">import </span>android.view.ViewGroup;
+
+<span class="s0">import </span>com.google.android.gms.common.images.Size;
+
+<span class="s0">import </span>java.io.IOException;
+
+<span class="s2">/** Preview the camera image in the screen. */</span>
+<span class="s0">public class </span>CameraSourcePreview <span class="s0">extends </span>ViewGroup {
+    <span class="s0">private static final </span>String TAG = <span class="s3">&quot;MIDemoApp:Preview&quot;</span>;
+
+    <span class="s0">private </span>Context context;
+    <span class="s0">private </span>SurfaceView surfaceView;
+    <span class="s0">private boolean </span>startRequested;
+    <span class="s0">private boolean </span>surfaceAvailable;
+    <span class="s0">private </span>CameraSource cameraSource;
+
+    <span class="s0">private </span>GraphicOverlay overlay;
+
+    <span class="s0">public </span>CameraSourcePreview(Context context, AttributeSet attrs) {
+        <span class="s0">super</span>(context, attrs);
+        <span class="s0">this</span>.context = context;
+        startRequested = <span class="s0">false</span>;
+        surfaceAvailable = <span class="s0">false</span>;
+
+        surfaceView = <span class="s0">new </span>SurfaceView(context);
+        surfaceView.getHolder().addCallback(<span class="s0">new </span>SurfaceCallback());
+        addView(surfaceView);
+    }
+
+    <span class="s0">public void </span>start(CameraSource cameraSource) <span class="s0">throws </span>IOException {
+        <span class="s0">if </span>(cameraSource == <span class="s0">null</span>) {
+            stop();
+        }
+
+        <span class="s0">this</span>.cameraSource = cameraSource;
+
+        <span class="s0">if </span>(<span class="s0">this</span>.cameraSource != <span class="s0">null</span>) {
+            startRequested = <span class="s0">true</span>;
+            startIfReady();
+        }
+    }
+
+    <span class="s0">public void </span>start(CameraSource cameraSource, GraphicOverlay overlay) <span class="s0">throws </span>IOException {
+        <span class="s0">this</span>.overlay = overlay;
+        start(cameraSource);
+    }
+
+    <span class="s0">public void </span>stop() {
+        <span class="s0">if </span>(cameraSource != <span class="s0">null</span>) {
+            cameraSource.stop();
+        }
+    }
+
+    <span class="s0">public void </span>release() {
+        <span class="s0">if </span>(cameraSource != <span class="s0">null</span>) {
+            cameraSource.release();
+            cameraSource = <span class="s0">null</span>;
+        }
+    }
+
+    @SuppressLint(<span class="s3">&quot;MissingPermission&quot;</span>)
+    <span class="s0">private void </span>startIfReady() <span class="s0">throws </span>IOException {
+        <span class="s0">if </span>(startRequested &amp;&amp; surfaceAvailable) {
+            cameraSource.start();
+            <span class="s0">if </span>(overlay != <span class="s0">null</span>) {
+                Size size = cameraSource.getPreviewSize();
+                <span class="s0">int </span>min = Math.min(size.getWidth(), size.getHeight());
+                <span class="s0">int </span>max = Math.max(size.getWidth(), size.getHeight());
+                <span class="s0">if </span>(isPortraitMode()) {
+                    <span class="s2">// Swap width and height sizes when in portrait, since it will be rotated by</span>
+                    <span class="s2">// 90 degrees</span>
+                    overlay.setCameraInfo(min, max, cameraSource.getCameraFacing());
+                } <span class="s0">else </span>{
+                    overlay.setCameraInfo(max, min, cameraSource.getCameraFacing());
+                }
+                overlay.clear();
+            }
+            startRequested = <span class="s0">false</span>;
+        }
+    }
+
+    <span class="s0">private class </span>SurfaceCallback <span class="s0">implements </span>SurfaceHolder.Callback {
+        @Override
+        <span class="s0">public void </span>surfaceCreated(SurfaceHolder surface) {
+            surfaceAvailable = <span class="s0">true</span>;
+            <span class="s0">try </span>{
+                startIfReady();
+            } <span class="s0">catch </span>(IOException e) {
+                Log.e(TAG, <span class="s3">&quot;Could not start camera source.&quot;</span>, e);
+            }
+        }
+
+        @Override
+        <span class="s0">public void </span>surfaceDestroyed(SurfaceHolder surface) {
+            surfaceAvailable = <span class="s0">false</span>;
+        }
+
+        @Override
+        <span class="s0">public void </span>surfaceChanged(SurfaceHolder holder, <span class="s0">int </span>format, <span class="s0">int </span>width, <span class="s0">int </span>height) {}
+    }
+
+    @Override
+    <span class="s0">protected void </span>onLayout(<span class="s0">boolean </span>changed, <span class="s0">int </span>left, <span class="s0">int </span>top, <span class="s0">int </span>right, <span class="s0">int </span>bottom) {
+        <span class="s0">int </span>width = <span class="s4">640</span>;
+        <span class="s0">int </span>height = <span class="s4">480</span>;
+        <span class="s0">if </span>(cameraSource != <span class="s0">null</span>) {
+            Size size = cameraSource.getPreviewSize();
+            <span class="s0">if </span>(size != <span class="s0">null</span>) {
+                width = size.getWidth();
+                height = size.getHeight();
+            }
+        }
+
+        <span class="s2">// Swap width and height sizes when in portrait, since it will be rotated 90 degrees</span>
+        <span class="s0">if </span>(isPortraitMode()) {
+            <span class="s0">int </span>tmp = width;
+            width = height;
+            height = tmp;
+        }
+
+        <span class="s0">final int </span>layoutWidth = right - left;
+        <span class="s0">final int </span>layoutHeight = bottom - top;
+
+        <span class="s2">// Computes height and width for potentially doing fit width.</span>
+        <span class="s0">int </span>childWidth = layoutWidth;
+        <span class="s0">int </span>childHeight = (<span class="s0">int</span>) (((<span class="s0">float</span>) layoutWidth / (<span class="s0">float</span>) width) * height);
+
+        <span class="s2">// If height is too tall using fit width, does fit height instead.</span>
+        <span class="s0">if </span>(childHeight &gt; layoutHeight) {
+            childHeight = layoutHeight;
+            childWidth = (<span class="s0">int</span>) (((<span class="s0">float</span>) layoutHeight / (<span class="s0">float</span>) height) * width);
+        }
+
+        <span class="s0">for </span>(<span class="s0">int </span>i = <span class="s4">0</span>; i &lt; getChildCount(); ++i) {
+            getChildAt(i).layout(<span class="s4">0</span>, <span class="s4">0</span>, childWidth, childHeight);
+            Log.d(TAG, <span class="s3">&quot;Assigned view: &quot; </span>+ i);
+        }
+
+        <span class="s0">try </span>{
+            startIfReady();
+        } <span class="s0">catch </span>(IOException e) {
+            Log.e(TAG, <span class="s3">&quot;Could not start camera source.&quot;</span>, e);
+        }
+    }
+
+    <span class="s0">private boolean </span>isPortraitMode() {
+        <span class="s0">int </span>orientation = context.getResources().getConfiguration().orientation;
+        <span class="s0">if </span>(orientation == Configuration.ORIENTATION_LANDSCAPE) {
+            <span class="s0">return false</span>;
+        }
+        <span class="s0">if </span>(orientation == Configuration.ORIENTATION_PORTRAIT) {
+            <span class="s0">return true</span>;
+        }
+
+        Log.d(TAG, <span class="s3">&quot;isPortraitMode returning false by default&quot;</span>);
+        <span class="s0">return false</span>;
+    }
+}
+</pre>
+</body>
+</html>

@@ -1,0 +1,139 @@
+<html>
+<head>
+<title>DocumentActivity.java</title>
+<meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+<style type="text/css">
+.s0 { color: #000080; font-weight: bold;}
+.s1 { color: #000000;}
+.s2 { color: #008000; font-weight: bold;}
+.s3 { color: #0000ff;}
+</style>
+</head>
+<body bgcolor="#ffffff">
+<table CELLSPACING=0 CELLPADDING=5 COLS=1 WIDTH="100%" BGCOLOR="#c0c0c0" >
+<tr><td><center>
+<font face="Arial, Helvetica" color="#000000">
+DocumentActivity.java</font>
+</center></td></tr></table>
+<pre><span class="s0">package </span>com.example.myapplication;
+
+<span class="s0">import </span>androidx.appcompat.app.AppCompatActivity;
+<span class="s0">import </span>androidx.recyclerview.widget.LinearLayoutManager;
+<span class="s0">import </span>androidx.recyclerview.widget.RecyclerView;
+
+<span class="s0">import </span>android.content.Intent;
+<span class="s0">import </span>android.graphics.Color;
+<span class="s0">import </span>android.os.AsyncTask;
+<span class="s0">import </span>android.os.Bundle;
+<span class="s0">import </span>android.util.Log;
+<span class="s0">import </span>android.widget.TextView;
+
+<span class="s0">import </span>java.sql.Connection;
+<span class="s0">import </span>java.sql.ResultSet;
+<span class="s0">import </span>java.sql.SQLException;
+<span class="s0">import </span>java.sql.Statement;
+<span class="s0">import </span>java.util.ArrayList;
+
+<span class="s0">public class </span>DocumentActivity <span class="s0">extends </span>AppCompatActivity {
+
+    TextView order_number;
+    SqlConnection sqlConnection;
+    Connection connection;
+    String orderNumber;
+    ArrayList&lt;Document&gt; documentArrayList;
+    RecyclerView recyclerView;
+    LinearLayoutManager linearLayoutManager;
+    DocumentAdapter documentAdapter;
+
+    @Override
+    <span class="s0">protected void </span>onCreate(Bundle savedInstanceState) {
+        <span class="s0">super</span>.onCreate(savedInstanceState);
+        setContentView(R.layout.activity_document);
+        getWindow().setStatusBarColor(Color.parseColor(<span class="s2">&quot;#03a9f4&quot;</span>));
+        order_number = findViewById(R.id.order_number);
+        recyclerView = findViewById(R.id.document_recyclerView);
+        sqlConnection = <span class="s0">new </span>SqlConnection();
+
+
+
+
+        Intent intent = getIntent();
+        orderNumber = intent.getStringExtra(<span class="s2">&quot;Numer Zlecenia&quot;</span>);
+        orderNumber.replaceAll(<span class="s2">&quot;</span><span class="s0">\\</span><span class="s2">s+&quot;</span>,<span class="s2">&quot;&quot;</span>);
+        order_number.setText(orderNumber+<span class="s2">&quot;&quot;</span>);
+
+        documentArrayList = <span class="s0">new </span>ArrayList&lt;&gt;();
+        recyclerView = findViewById(R.id.document_recyclerView);
+        linearLayoutManager = <span class="s0">new </span>LinearLayoutManager(getApplicationContext());
+        recyclerView.setLayoutManager(linearLayoutManager);
+        documentAdapter = <span class="s0">new </span>DocumentAdapter(getApplicationContext(), documentArrayList);
+        recyclerView.setAdapter(documentAdapter);
+
+
+
+
+    }
+
+    @Override
+    <span class="s0">protected void </span>onPostResume() {
+        <span class="s0">super</span>.onPostResume();
+        documentArrayList.clear();
+        <span class="s0">new </span>getDocuments().execute();
+    }
+
+    @Override
+    <span class="s0">protected void </span>onPause() {
+        <span class="s0">super</span>.onPause();
+        documentArrayList.clear();
+
+
+    }
+
+    <span class="s0">public class </span>getDocuments <span class="s0">extends </span>AsyncTask&lt;Void, Void, Void&gt; {
+
+        @Override
+        <span class="s0">protected void </span>onPostExecute(Void voids) {
+            <span class="s0">super</span>.onPostExecute(voids);
+            documentAdapter.notifyDataSetChanged();
+
+        }
+
+        <span class="s0">protected </span>Void doInBackground(Void... voids) {
+
+            <span class="s0">try </span>{
+                connection = sqlConnection.CONN();
+                ResultSet rs = <span class="s0">null</span>;
+                <span class="s0">if </span>(connection != <span class="s0">null</span>) {
+                    Statement statement = connection.createStatement();
+                    rs = statement.executeQuery(<span class="s2">&quot;SELECT * from dbo.CtiZlecenieDok</span><span class="s0">\n</span><span class="s2">&quot; </span>+
+                            <span class="s2">&quot;join CtiZlecenieNag</span><span class="s0">\n</span><span class="s2">&quot; </span>+
+                            <span class="s2">&quot;ON CZn_Id = CZD_CZNId</span><span class="s0">\n</span><span class="s2">&quot; </span>+
+                            <span class="s2">&quot;where CZN_NrPelny = '&quot; </span>+ orderNumber + <span class="s2">&quot;'&quot;</span>);
+                    <span class="s0">while </span>(rs.next()) {
+                        documentArrayList.add(<span class="s0">new </span>Document(rs.getString(<span class="s3">2</span>).toString(), rs.getString(<span class="s3">6</span>).toString()));
+                    }
+                    connection.close();
+                }
+
+                } <span class="s0">catch</span>(SQLException e){
+                    e.printStackTrace();
+                }
+
+
+            <span class="s0">return  null</span>;
+        }
+
+        @Override
+        <span class="s0">protected void </span>onPreExecute() {
+            <span class="s0">super</span>.onPreExecute();
+            documentArrayList.clear();
+
+        }
+    }
+
+
+
+}
+</pre>
+</body>
+</html>
